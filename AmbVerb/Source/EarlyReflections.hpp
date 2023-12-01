@@ -28,7 +28,7 @@ public:
     
     EarlyRef();
     ~EarlyRef();
-    void processBlock(const float *const * Block, int DspBlocksize, double pB_Samplerate); // DSP-Cycle
+    void processBlock(const float* const Block[], int DspBlocksize, double pB_Samplerate); // DSP-Cycle
     void set_Q(float f);
     void set_RotAngle(float f);
     void set_EarlyrefVolume(float Value);

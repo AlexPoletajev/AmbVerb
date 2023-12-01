@@ -36,5 +36,227 @@
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "B0BF30C3-C69E-4405-9229-1ADCC98E6D93"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../../Source/PluginProcessor.cpp"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "28"
+            endingLineNumber = "28"
+            landmarkName = "AmbVerbAudioProcessor::AmbVerbAudioProcessor()"
+            landmarkType = "7">
+            <Locations>
+               <Location
+                  uuid = "B0BF30C3-C69E-4405-9229-1ADCC98E6D93 - df8330e40ea3b64f"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "AmbVerbAudioProcessor::AmbVerbAudioProcessor()"
+                  moduleName = "AmbVerb"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/alexanderpoletajev/Documents/GitHub/AmbVerb/AmbVerb/Source/PluginProcessor.cpp"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "28"
+                  endingLineNumber = "28"
+                  offsetFromSymbolStart = "324">
+               </Location>
+               <Location
+                  uuid = "B0BF30C3-C69E-4405-9229-1ADCC98E6D93 - df8330e40ea3b64f"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "AmbVerbAudioProcessor::AmbVerbAudioProcessor()"
+                  moduleName = "AmbVerb"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/alexanderpoletajev/Documents/GitHub/AmbVerb/AmbVerb/Source/PluginProcessor.cpp"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "28"
+                  endingLineNumber = "28"
+                  offsetFromSymbolStart = "456">
+               </Location>
+               <Location
+                  uuid = "B0BF30C3-C69E-4405-9229-1ADCC98E6D93 - df8330e40ea3b64f"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "AmbVerbAudioProcessor::AmbVerbAudioProcessor()"
+                  moduleName = "AmbVerb"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/alexanderpoletajev/Documents/GitHub/AmbVerb/AmbVerb/Source/PluginProcessor.cpp"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "28"
+                  endingLineNumber = "28"
+                  offsetFromSymbolStart = "452">
+               </Location>
+            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "54C09A49-B6D0-4F6F-B7C2-0798D9F404F3"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../../Source/EarlyReflections.cpp"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "23"
+            endingLineNumber = "23"
+            landmarkName = "EarlyRef::EarlyRef()"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "DAD28DA5-A444-4285-9C35-BE7913576418"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../../Source/PluginProcessor.cpp"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "68"
+            endingLineNumber = "68"
+            landmarkName = "AmbVerbAudioProcessor::AmbVerbAudioProcessor()"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "5ED5AAD8-9958-49B0-A3B7-ECDB5F778D2E"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../../Source/PluginProcessor.cpp"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "84"
+            endingLineNumber = "84"
+            landmarkName = "AmbVerbAudioProcessor::AmbVerbAudioProcessor()"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "145D373F-5DC0-46B8-AA87-B92685F73586"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../../Source/PluginProcessor.cpp"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "234"
+            endingLineNumber = "234"
+            landmarkName = "AmbVerbAudioProcessor::processBlock(buffer, midiMessages)"
+            landmarkType = "7">
+            <Locations>
+               <Location
+                  uuid = "145D373F-5DC0-46B8-AA87-B92685F73586 - 955bdd1bb0980ace"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "AmbVerbAudioProcessor::processBlock(juce::AudioBuffer&lt;float&gt;&amp;, juce::MidiBuffer&amp;)"
+                  moduleName = "AmbVerb"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/alexanderpoletajev/Documents/GitHub/AmbVerb/AmbVerb/Source/PluginProcessor.cpp"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "208"
+                  endingLineNumber = "208"
+                  offsetFromSymbolStart = "84">
+               </Location>
+               <Location
+                  uuid = "145D373F-5DC0-46B8-AA87-B92685F73586 - 955bdd1bb0980655"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "AmbVerbAudioProcessor::processBlock(juce::AudioBuffer&lt;float&gt;&amp;, juce::MidiBuffer&amp;)"
+                  moduleName = "AmbVerb"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/alexanderpoletajev/Documents/GitHub/AmbVerb/AmbVerb/Source/PluginProcessor.cpp"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "235"
+                  endingLineNumber = "235"
+                  offsetFromSymbolStart = "84">
+               </Location>
+               <Location
+                  uuid = "145D373F-5DC0-46B8-AA87-B92685F73586 - 955bdd1bb0980674"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "AmbVerbAudioProcessor::processBlock(juce::AudioBuffer&lt;float&gt;&amp;, juce::MidiBuffer&amp;)"
+                  moduleName = "AmbVerb"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/alexanderpoletajev/Documents/GitHub/AmbVerb/AmbVerb/Source/PluginProcessor.cpp"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "234"
+                  endingLineNumber = "234"
+                  offsetFromSymbolStart = "88">
+               </Location>
+            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "EE9712E6-23C7-42AF-A7A7-BD84B1976A38"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../../Source/PluginProcessor.cpp"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "241"
+            endingLineNumber = "241"
+            landmarkName = "AmbVerbAudioProcessor::processBlock(buffer, midiMessages)"
+            landmarkType = "7">
+            <Locations>
+               <Location
+                  uuid = "EE9712E6-23C7-42AF-A7A7-BD84B1976A38 - 955bdd1bb098068f"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "AmbVerbAudioProcessor::processBlock(juce::AudioBuffer&lt;float&gt;&amp;, juce::MidiBuffer&amp;)"
+                  moduleName = "AmbVerb"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/alexanderpoletajev/Documents/GitHub/AmbVerb/AmbVerb/Source/PluginProcessor.cpp"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "241"
+                  endingLineNumber = "241"
+                  offsetFromSymbolStart = "196">
+               </Location>
+               <Location
+                  uuid = "EE9712E6-23C7-42AF-A7A7-BD84B1976A38 - 955bdd1bb098068f"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "AmbVerbAudioProcessor::processBlock(juce::AudioBuffer&lt;float&gt;&amp;, juce::MidiBuffer&amp;)"
+                  moduleName = "AmbVerb"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/alexanderpoletajev/Documents/GitHub/AmbVerb/AmbVerb/Source/PluginProcessor.cpp"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "241"
+                  endingLineNumber = "241"
+                  offsetFromSymbolStart = "200">
+               </Location>
+            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
    </Breakpoints>
 </Bucket>

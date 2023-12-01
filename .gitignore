@@ -1,5 +1,5 @@
 # build folder
-Build/
+build/*
 
 # Prerequisites
 *.d
@@ -36,3 +36,11 @@ Build/
 *.vst
 *.vst3
 *.component
+
+# Mac
+*.DS_Store
+
+AmbVerb/Builds/MacOSX/build/Debug/juce_vst3_helper
+AmbVerb/Builds/MacOSX/build/Release/juce_vst3_helper
+AmbVerb/Builds/MacOSX/AmbVerb.xcodeproj/xcuserdata/alexanderpoletajev.xcuserdatad/xcdebugger/Breakpoints_v2.xcbkptlist
+*.xcscheme

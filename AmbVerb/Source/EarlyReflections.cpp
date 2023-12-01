@@ -235,7 +235,7 @@ EarlyRef::~EarlyRef() {
     
 }
 
-void EarlyRef::processBlock(const float* Block, int DspBlocksize, double pB_Samplerate) {
+void EarlyRef::processBlock(const float* const Block[], int DspBlocksize, double pB_Samplerate) {
     
 
     

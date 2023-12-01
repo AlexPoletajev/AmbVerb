@@ -17,7 +17,7 @@
 #define WindowEndsAt_xRoomsize 0.3
 #define maxDelayTimeAt_xRoomsize 2.5
 
-#define AmbisonicsOrder 5 //max 10
+#define AmbisonicsOrder 3 //max 10
 #define NumAmbisonicsChannels (AmbisonicsOrder+1)*(AmbisonicsOrder+1)
 #define earlyref_Log2N 14
 #define    earlyref_Buffersize    (1u<<earlyref_Log2N)    // Number of elements.

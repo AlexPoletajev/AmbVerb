@@ -106,12 +106,12 @@ void AmbVerbAudioProcessorEditor::sliderValueChanged (juce::Slider* slider)
     if (auto param = getParameterForSlider (slider)){
         *param = (float) slider->getValue();
         if (param->getParameterIndex() == 0) {
-           // processor.earlyref.set_EarlyrefVolume(slider->getValue());
+            audioProcessor.earlyref.set_EarlyrefVolume(slider->getValue());
             printf("EarlyrefVolume\n");
             
         }
         else if(param->getParameterIndex() == 1) {
-           // processor.fdn.set_Volume(slider->getValue());
+            audioProcessor.fdn.set_Volume(slider->getValue());
             printf("FdnVolume \n");
             
         }
@@ -129,36 +129,36 @@ void AmbVerbAudioProcessorEditor::sliderValueChanged (juce::Slider* slider)
         else if(param->getParameterIndex() == 4) {
             
             
-//            if(slider->getValue() != processor.fdn.getMinDelaytime())
-//                
-//            {
-//                *processor.Roomsize = slider->getValue();
-//                
-//                processor.earlyref.set_Q((int)(Qmin+(slider->getValue()-MinRoomsize)/(MaxRoomsize-MinRoomsize)*(Qmax-Qmin)));
-//
-//                processor.fdn.setDelayTimes((int)*processor.Roomsize, (int)(*processor.Roomsize * maxDelayTimeAt_xRoomsize));
-//
-//                processor.fdn.setWindowBoundries(WindowStartsAt_xRoomsize*(int)(*processor.Roomsize), WindowStartsAt_xRoomsize*(int)(*processor.Roomsize)+processor.earlyref.OnsetLength*
-//                                             WindowEndsAt_xRoomsize);
-//                processor.earlyref.UnlockRotationMatrixForCalculaion();
-//
-//                /*processor.fdn.setWindowBoundries(processor.earlyref.getQ()/100*(processor.earlyref.IRsymmetryPoint- processor.earlyref.EarlyrefDelayTime), (int)processor.earlyref.getQ()/100*(processor.earlyref.EndOfIR - processor.earlyref.EarlyrefDelayTime));*/
-//
-//                printf("Roomsize\n");
-//            }
+            if(slider->getValue() != audioProcessor.fdn.getMinDelaytime())
+                
+            {
+                *audioProcessor.Roomsize = slider->getValue();
+                
+                audioProcessor.earlyref.set_Q((int)(Qmin+(slider->getValue()-MinRoomsize)/(MaxRoomsize-MinRoomsize)*(Qmax-Qmin)));
+
+                audioProcessor.fdn.setDelayTimes((int)*audioProcessor.Roomsize, (int)(*audioProcessor.Roomsize * maxDelayTimeAt_xRoomsize));
+
+                audioProcessor.fdn.setWindowBoundries(WindowStartsAt_xRoomsize*(int)(*audioProcessor.Roomsize), WindowStartsAt_xRoomsize*(int)(*audioProcessor.Roomsize)+audioProcessor.earlyref.OnsetLength*
+                                             WindowEndsAt_xRoomsize);
+                audioProcessor.earlyref.UnlockRotationMatrixForCalculaion();
+
+                /*processor.fdn.setWindowBoundries(processor.earlyref.getQ()/100*(processor.earlyref.IRsymmetryPoint- processor.earlyref.EarlyrefDelayTime), (int)processor.earlyref.getQ()/100*(processor.earlyref.EndOfIR - processor.earlyref.EarlyrefDelayTime));*/
+
+                printf("Roomsize\n");
+            }
         }
         else if(param->getParameterIndex() == 5) {
-//            processor.fdn.setT60(slider->getValue()+(WindowStartsAt_xRoomsize* *processor.Roomsize)/processor.getSampleRate());
-//            processor.earlyref.FilterCoeffA = processor.fdn.a0[(int)NumDelaylines-1];
-//            processor.earlyref.FilterCoeffB = processor.fdn.p[(int)NumDelaylines-1];
-//            printf("T60\n");
+            audioProcessor.fdn.setT60(slider->getValue()+(WindowStartsAt_xRoomsize* *audioProcessor.Roomsize)/audioProcessor.getSampleRate());
+            audioProcessor.earlyref.FilterCoeffA = audioProcessor.fdn.a0[(int)NumDelaylines-1];
+            audioProcessor.earlyref.FilterCoeffB = audioProcessor.fdn.p[(int)NumDelaylines-1];
+            printf("T60\n");
             
         }
         else if(param->getParameterIndex() == 6) {
-//            processor.fdn.setT60Ratio(slider->getValue());
-//            processor.earlyref.FilterCoeffA = processor.fdn.a0[(int)NumDelaylines-1];
-//            processor.earlyref.FilterCoeffB = processor.fdn.p[(int)NumDelaylines-1];
-//            printf("T60Ratio\n");
+            audioProcessor.fdn.setT60Ratio(slider->getValue());
+            audioProcessor.earlyref.FilterCoeffA = audioProcessor.fdn.a0[(int)NumDelaylines-1];
+            audioProcessor.earlyref.FilterCoeffB = audioProcessor.fdn.p[(int)NumDelaylines-1];
+            printf("T60Ratio\n");
         }
     }
 }
@@ -172,12 +172,12 @@ void AmbVerbAudioProcessorEditor:: set_DirectSoundVolume(float Value){
         printf("(%f)-Error: Magnitude must be between 0 - 1\n",Value);
         
     }
-//    else if (Value == 1)
-//    {
-//        processor.DirectSoundVolume = 0;
-//    }
-//    else
-//        processor.DirectSoundVolume =  0.01*exp(4.605170*(1.0-Value));
+    else if (Value == 1)
+    {
+        audioProcessor.DirectSoundVolume = 0;
+    }
+    else
+        audioProcessor.DirectSoundVolume =  0.01*exp(4.605170*(1.0-Value));
 }
 
 void AmbVerbAudioProcessorEditor:: set_ReverbVolume(float Value){
@@ -188,10 +188,10 @@ void AmbVerbAudioProcessorEditor:: set_ReverbVolume(float Value){
         printf("(%f)-Error: Magnitude must be between 0 - 1\n",Value);
         
     }
-//    else if (Value == 0)
-//    {
-//        processor.ReverbVol = 0;
-//    }
-//    else
-//        processor.ReverbVol =  0.01*exp(4.605170*Value);
+    else if (Value == 0)
+    {
+        audioProcessor.ReverbVol = 0;
+    }
+    else
+        audioProcessor.ReverbVol =  0.01*exp(4.605170*Value);
 }
