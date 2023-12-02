@@ -1,5 +1,5 @@
 # build folder
-build/*
+AmbVerb/Builds/
 
 # Prerequisites
 *.d
