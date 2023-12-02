@@ -42,5 +42,6 @@ build/*
 
 AmbVerb/Builds/MacOSX/build/Debug/juce_vst3_helper
 AmbVerb/Builds/MacOSX/build/Release/juce_vst3_helper
-AmbVerb/Builds/MacOSX/AmbVerb.xcodeproj/xcuserdata/alexanderpoletajev.xcuserdatad/xcdebugger/Breakpoints_v2.xcbkptlist
+*.xcbkptlist
 *.xcscheme
+*.xcuserstate
