@@ -92,13 +92,18 @@ because shared runners and platform FFT backends have different timing noise.
 
 ## Runtime convolution
 
-The early-reflection matrix and the FDN correction filters use zero-latency,
-uniform partitioned convolution. For a host maximum block size `B`, the
-partition size `P` is the next power of two and the runtime FFT size is `2P`.
-Input transforms are shared by all matrix routes, output spectra are accumulated
-before a single inverse transform per channel, and complex multiplication uses
-JUCE's SIMD vector primitives. The convolver accepts changing callback lengths
-up to the prepared maximum without changing the signal timing.
+On Windows and Linux, the early-reflection matrix and FDN correction filters use
+zero-latency, uniform partitioned convolution. For a host maximum block size
+`B`, the partition size `P` is the next power of two and the runtime FFT size is
+`2P`. Input transforms are shared by all matrix routes, output spectra are
+accumulated before a single inverse transform per channel, and complex
+multiplication uses JUCE's SIMD vector primitives. The convolver accepts
+changing callback lengths up to the prepared maximum without changing timing.
+
+On Apple systems the benchmark selects the shared full-size path instead.
+Accelerate/vDSP processes the 16,384-point transforms faster than the additional
+partition bookkeeping on the current Apple Silicon runner. The synthetic
+partitioner test still runs on macOS so both implementations remain covered.
 
 On the development i9-14900KS Linux environment at 48 kHz, the mean callback
 time for the benchmark's 64--1024 sample cases developed as follows:
@@ -107,7 +112,7 @@ time for the benchmark's 64--1024 sample cases developed as follows:
 | --- | ---: |
 | Original route-by-route 16,384-point FFTs | 24.6--25.4 ms |
 | Shared full-size FFTs and ring buffers | 7.0--7.2 ms |
-| Shared partitioned MIMO convolution | 1.2--1.9 ms |
+| Shared partitioned MIMO convolution (Linux) | 1.2--1.9 ms |
 
 The fixed-transform part therefore falls from transforms of size 16,384 to
 size `2P`. Its approximate FFT-work reduction is

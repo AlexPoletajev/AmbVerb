@@ -610,6 +610,11 @@ void EarlyRef:: CalculateRxyz() {
 }
 
 void EarlyRef::buildPendingConvolutionBank(std::size_t onsetOffset) {
+    if (!UsePartitionedRuntimeConvolution) {
+        juce::ignoreUnused(onsetOffset);
+        return;
+    }
+
     if (preparedSampleRate <= 0.0 || preparedMaximumBlockSize <= 0)
         return;
 

@@ -564,6 +564,9 @@ void FDN:: windowIR() {
 }
 
 void FDN::buildPendingConvolutionBank() {
+    if (!UsePartitionedRuntimeConvolution)
+        return;
+
     if (Samplerate <= 0.0 || preparedMaximumBlockSize <= 0)
         return;
 

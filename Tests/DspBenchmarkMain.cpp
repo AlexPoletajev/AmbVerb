@@ -135,8 +135,14 @@ juce::var benchmarkCase(AmbVerbAudioProcessor& processor,
     auto result = std::make_unique<juce::DynamicObject>();
     result->setProperty("sampleRate", sampleRate);
     result->setProperty("blockSize", blockSize);
-    result->setProperty("partitionSize", juce::nextPowerOfTwo(blockSize));
-    result->setProperty("convolutionFftSize", 2 * juce::nextPowerOfTwo(blockSize));
+    result->setProperty("partitionSize",
+                        UsePartitionedRuntimeConvolution
+                            ? juce::nextPowerOfTwo(blockSize)
+                            : 0);
+    result->setProperty("convolutionFftSize",
+                        UsePartitionedRuntimeConvolution
+                            ? 2 * juce::nextPowerOfTwo(blockSize)
+                            : static_cast<int>(earlyref_Buffersize));
     result->setProperty("prepareUs",
                         std::chrono::duration<double, std::micro>(prepareEnd - prepareStart)
                             .count());
@@ -190,7 +196,10 @@ int main(int argc, char* argv[])
     report->setProperty("ambisonicsOrder", AmbisonicsOrder);
     report->setProperty("channels", NumAmbisonicsChannels);
     report->setProperty("fftSize", static_cast<int>(earlyref_Buffersize));
-    report->setProperty("runtimeConvolution", "shared-uniform-partitioned-mimo");
+    report->setProperty("runtimeConvolution",
+                        UsePartitionedRuntimeConvolution
+                            ? "shared-uniform-partitioned-mimo"
+                            : "shared-full-size-fft");
     report->setProperty("warmupBlocks", options.warmupBlocks);
     report->setProperty("measuredBlocks", options.measuredBlocks);
     report->setProperty("constructorUs",

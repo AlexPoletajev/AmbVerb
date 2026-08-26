@@ -24,3 +24,12 @@ inline constexpr int Trunc = 8;
 inline constexpr int fdn_Log2N = 14;
 inline constexpr std::size_t fdn_Buffersize = std::size_t { 1 } << fdn_Log2N;
 inline constexpr int NumDelaylines = 16;
+
+// Accelerate/vDSP handles the shared 16,384-point transforms more efficiently
+// than the partition bookkeeping on Apple Silicon. Portable JUCE FFT backends
+// benefit substantially from the block-adaptive partitioned runtime path.
+#if JUCE_MAC
+inline constexpr bool UsePartitionedRuntimeConvolution = false;
+#else
+inline constexpr bool UsePartitionedRuntimeConvolution = true;
+#endif
