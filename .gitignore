@@ -1,6 +1,7 @@
 # build folder
 AmbVerb/Builds/
 Build/
+Build-*/
 cmake-build-*/
 out/
 Tests/CurrentAudio/

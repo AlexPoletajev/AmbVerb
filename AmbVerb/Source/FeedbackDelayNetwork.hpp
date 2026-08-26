@@ -2,7 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
-#include <Accelerate/Accelerate.h>
+#include <vecLib/vDSP.h>
 
 #include <atomic>
 #include <cmath>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Accelerate/Accelerate.h>
+#include <vecLib/vDSP.h>
 
 #include <algorithm>
 #include <cstddef>

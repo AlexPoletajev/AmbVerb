@@ -15,6 +15,8 @@
 #include <stdexcept>
 #include "EarlyReflections.hpp"
 
+#include <vecLib/cblas.h>
+
 EarlyRef::EarlyRef() {
     earlyrefVolume = 0.7;
     EarlyrefDelayTime = 0;

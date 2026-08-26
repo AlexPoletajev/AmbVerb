@@ -84,6 +84,9 @@ private:
 
     FloatBuffer directSoundBuffer[NumAmbisonicsChannels];
     FloatBuffer earlyReflectionBuffer[NumAmbisonicsChannels];
+   #if defined(AMBVERB_STEREO_COMPATIBILITY)
+    juce::AudioBuffer<float> stereoCompatibilityBuffer;
+   #endif
     std::atomic<float> appliedRoomSize { static_cast<float>(MinRoomsize) };
     bool prepared = false;
 

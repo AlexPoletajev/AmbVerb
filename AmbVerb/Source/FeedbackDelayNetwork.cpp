@@ -8,6 +8,8 @@
 
 #include "FeedbackDelayNetwork.hpp"
 
+#include <vecLib/cblas.h>
+
 #include <algorithm>
 #include <cstdio>
 #include <cstring>

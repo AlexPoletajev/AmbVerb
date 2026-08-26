@@ -23,9 +23,17 @@ AmbVerbAudioProcessor::AmbVerbAudioProcessor()
     : AudioProcessor(BusesProperties()
                      #if !JucePlugin_IsMidiEffect
                       #if !JucePlugin_IsSynth
+                       #if defined(AMBVERB_STEREO_COMPATIBILITY)
+                     .withInput("Input", juce::AudioChannelSet::stereo(), true)
+                       #else
                      .withInput("Input", juce::AudioChannelSet::ambisonic(AmbisonicsOrder), true)
+                       #endif
                       #endif
+                      #if defined(AMBVERB_STEREO_COMPATIBILITY)
+                     .withOutput("Output", juce::AudioChannelSet::stereo(), true)
+                      #else
                      .withOutput("Output", juce::AudioChannelSet::ambisonic(AmbisonicsOrder), true)
+                      #endif
                      #endif
                      ),
       parameterState(*this, nullptr, "AmbVerbParameters", createParameterLayout())
@@ -188,6 +196,14 @@ void AmbVerbAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
         return;
     }
 
+   #if defined(AMBVERB_STEREO_COMPATIBILITY)
+    stereoCompatibilityBuffer.setSize(NumAmbisonicsChannels,
+                                      samplesPerBlock,
+                                      false,
+                                      true,
+                                      false);
+   #endif
+
     earlyref.reset();
     fdn.prepare(sampleRate, samplesPerBlock);
 
@@ -213,9 +229,14 @@ bool AmbVerbAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) c
     juce::ignoreUnused(layouts);
     return true;
    #else
+    #if defined(AMBVERB_STEREO_COMPATIBILITY)
+    return layouts.getMainInputChannelSet() == juce::AudioChannelSet::stereo()
+        && layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
+    #else
     const auto requiredLayout = juce::AudioChannelSet::ambisonic(AmbisonicsOrder);
     return layouts.getMainInputChannelSet() == requiredLayout
         && layouts.getMainOutputChannelSet() == requiredLayout;
+    #endif
    #endif
 }
 #endif
@@ -239,8 +260,38 @@ void AmbVerbAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     juce::ScopedNoDenormals noDenormals;
 
     const int blockSize = buffer.getNumSamples();
-    const int inputChannels = getTotalNumInputChannels();
-    const int outputChannels = getTotalNumOutputChannels();
+
+   #if defined(AMBVERB_STEREO_COMPATIBILITY)
+    if (getTotalNumInputChannels() != 2
+        || getTotalNumOutputChannels() != 2
+        || blockSize > stereoCompatibilityBuffer.getNumSamples()) {
+        buffer.clear();
+        jassertfalse;
+        return;
+    }
+
+    constexpr float inverseSquareRootOfTwo = 0.7071067811865475f;
+    stereoCompatibilityBuffer.clear();
+
+    const auto* leftInput = buffer.getReadPointer(0);
+    const auto* rightInput = buffer.getReadPointer(1);
+    auto* wInput = stereoCompatibilityBuffer.getWritePointer(0);
+    auto* yInput = stereoCompatibilityBuffer.getWritePointer(1);
+
+    for (int sample = 0; sample < blockSize; ++sample) {
+        wInput[sample] = (leftInput[sample] + rightInput[sample])
+            * inverseSquareRootOfTwo;
+        yInput[sample] = (leftInput[sample] - rightInput[sample])
+            * inverseSquareRootOfTwo;
+    }
+
+    auto& processingBuffer = stereoCompatibilityBuffer;
+   #else
+    auto& processingBuffer = buffer;
+   #endif
+
+    const int inputChannels = processingBuffer.getNumChannels();
+    const int outputChannels = processingBuffer.getNumChannels();
 
     if (!prepared
         || inputChannels != NumAmbisonicsChannels
@@ -261,8 +312,8 @@ void AmbVerbAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         return;
     }
 
-    const auto input = buffer.getArrayOfReadPointers();
-    auto output = buffer.getArrayOfWritePointers();
+    const auto input = processingBuffer.getArrayOfReadPointers();
+    auto output = processingBuffer.getArrayOfWritePointers();
 
     earlyref.set_EarlyrefVolume(earlyRefVolumeParameter->load(std::memory_order_relaxed));
     fdn.set_Volume(fdnVolumeParameter->load(std::memory_order_relaxed));
@@ -315,6 +366,20 @@ void AmbVerbAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                   1,
                   blockSize);
     }
+
+   #if defined(AMBVERB_STEREO_COMPATIBILITY)
+    const auto* wOutput = processingBuffer.getReadPointer(0);
+    const auto* yOutput = processingBuffer.getReadPointer(1);
+    auto* leftOutput = buffer.getWritePointer(0);
+    auto* rightOutput = buffer.getWritePointer(1);
+
+    for (int sample = 0; sample < blockSize; ++sample) {
+        leftOutput[sample] = (wOutput[sample] + yOutput[sample])
+            * inverseSquareRootOfTwo;
+        rightOutput[sample] = (wOutput[sample] - yOutput[sample])
+            * inverseSquareRootOfTwo;
+    }
+   #endif
 }
 
 bool AmbVerbAudioProcessor::hasEditor() const { return true; }

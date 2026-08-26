@@ -25,6 +25,14 @@ FetchContent_MakeAvailable(JUCE)
 set(AMBVERB_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/AmbVerb/Source")
 set(AMBVERB_MATRIX_DIR "${CMAKE_CURRENT_SOURCE_DIR}/AmbVerb/RotationMatrices")
 
+option(AMBVERB_STEREO_COMPATIBILITY
+    "Expose a stereo bus and encode/decode it around the 16-channel DSP core"
+    OFF)
+set(AMBVERB_PRODUCT_NAME "AmbVerb" CACHE STRING "Displayed plug-in product name")
+set(AMBVERB_BUNDLE_ID "com.alexanderpoletajev.ambverb"
+    CACHE STRING "Plug-in bundle identifier")
+set(AMBVERB_PLUGIN_CODE "S0i0" CACHE STRING "Four-character plug-in code")
+
 juce_add_binary_data(AmbVerbData
     NAMESPACE BinaryData
     SOURCES
@@ -36,11 +44,11 @@ juce_add_binary_data(AmbVerbData
 
 juce_add_plugin(AmbVerb
     COMPANY_NAME "Alexander Poletajev"
-    BUNDLE_ID com.alexanderpoletajev.ambverb
+    BUNDLE_ID "${AMBVERB_BUNDLE_ID}"
     PLUGIN_MANUFACTURER_CODE Manu
-    PLUGIN_CODE S0i0
+    PLUGIN_CODE "${AMBVERB_PLUGIN_CODE}"
     FORMATS AU VST3 Standalone
-    PRODUCT_NAME "AmbVerb"
+    PRODUCT_NAME "${AMBVERB_PRODUCT_NAME}"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
@@ -74,6 +82,10 @@ target_compile_definitions(AmbVerb
         JUCE_VST3_CAN_REPLACE_VST2=0
 )
 
+if (AMBVERB_STEREO_COMPATIBILITY)
+    target_compile_definitions(AmbVerb PUBLIC AMBVERB_STEREO_COMPATIBILITY=1)
+endif()
+
 target_link_libraries(AmbVerb
     PRIVATE
         AmbVerbData
@@ -86,13 +98,40 @@ target_link_libraries(AmbVerb
         juce::juce_recommended_warning_flags
 )
 
+if (AMBVERB_STEREO_COMPATIBILITY)
+    juce_add_console_app(AmbVerbStereoSmoke
+        PRODUCT_NAME "AmbVerb Stereo Smoke Test"
+    )
+
+    juce_generate_juce_header(AmbVerbStereoSmoke)
+
+    target_sources(AmbVerbStereoSmoke
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/Tests/StereoCompatibilityMain.cpp"
+    )
+
+    target_include_directories(AmbVerbStereoSmoke
+        PRIVATE
+            "${AMBVERB_SOURCE_DIR}"
+    )
+
+    target_compile_features(AmbVerbStereoSmoke PRIVATE cxx_std_17)
+
+    target_link_libraries(AmbVerbStereoSmoke
+        PRIVATE
+            AmbVerb
+            AmbVerbData
+            juce::juce_audio_utils
+    )
+endif()
+
 include(CTest)
 
 if (BUILD_TESTING)
     add_test(
         NAME AmbVerbRotationMatrixData
         COMMAND "${CMAKE_COMMAND}"
-            -DMATRIX_DIR="${AMBVERB_MATRIX_DIR}"
+            "-DMATRIX_DIR=${AMBVERB_MATRIX_DIR}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/Tests/ValidateRotationMatrices.cmake"
     )
 
@@ -123,6 +162,7 @@ if (BUILD_TESTING)
     target_link_libraries(AmbVerbAudioRegression
         PRIVATE
             AmbVerb
+            AmbVerbData
             juce::juce_audio_formats
             juce::juce_audio_utils
         PUBLIC

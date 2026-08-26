@@ -9,8 +9,8 @@
 
 namespace
 {
-constexpr double absoluteTolerance = 5.0e-6;
-constexpr double relativeTolerance = 5.0e-4;
+constexpr double audioAbsoluteTolerance = 5.0e-6;
+constexpr double audioRelativeTolerance = 5.0e-4;
 
 enum class Stimulus
 {
@@ -358,10 +358,10 @@ Comparison compare(const juce::AudioBuffer<float>& actual,
     result.rmsError = std::sqrt(sumSquaredError / valueCount);
     result.relativeRmsError = result.rmsError / std::max(result.rmsReference, 1.0e-12);
 
-    const double permittedPeakError = absoluteTolerance
-        + relativeTolerance * result.peakReference;
-    const double permittedRmsError = absoluteTolerance * 0.1
-        + relativeTolerance * result.rmsReference;
+    const double permittedPeakError = audioAbsoluteTolerance
+        + audioRelativeTolerance * result.peakReference;
+    const double permittedRmsError = audioAbsoluteTolerance * 0.1
+        + audioRelativeTolerance * result.rmsReference;
 
     result.passed = result.maximumAbsoluteError <= permittedPeakError
         && result.rmsError <= permittedRmsError;
@@ -416,8 +416,8 @@ juce::var makeManifest()
     root->setProperty("description", "AmbVerb pre-portability audio regression reference");
     root->setProperty("ambisonicsOrder", AmbisonicsOrder);
     root->setProperty("channels", NumAmbisonicsChannels);
-    root->setProperty("absoluteTolerance", absoluteTolerance);
-    root->setProperty("relativeTolerance", relativeTolerance);
+    root->setProperty("absoluteTolerance", audioAbsoluteTolerance);
+    root->setProperty("relativeTolerance", audioRelativeTolerance);
 
     juce::Array<juce::var> cases;
 
@@ -576,8 +576,8 @@ int main(int argc, char* argv[])
         }
     } else if (! artifactsDirectory.getFullPathName().isEmpty()) {
         report->setProperty("passed", allPassed);
-        report->setProperty("absoluteTolerance", absoluteTolerance);
-        report->setProperty("relativeTolerance", relativeTolerance);
+        report->setProperty("absoluteTolerance", audioAbsoluteTolerance);
+        report->setProperty("relativeTolerance", audioRelativeTolerance);
         report->setProperty("cases", reportCases);
         juce::String error;
 
