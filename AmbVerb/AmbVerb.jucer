@@ -14,6 +14,8 @@
       <FILE id="HBOnWK" name="PluginEditor.h" compile="0" resource="0" file="Source/PluginEditor.h"/>
       <FILE id="bufSto" name="BufferStorage.hpp" compile="0" resource="0"
             file="Source/BufferStorage.hpp"/>
+      <FILE id="portDs" name="PortableDsp.hpp" compile="0" resource="0"
+            file="Source/PortableDsp.hpp"/>
       <FILE id="cmpFlg" name="CompilationFlags.h" compile="0" resource="0"
             file="Source/CompilationFlags.h"/>
       <FILE id="earCpp" name="EarlyReflections.cpp" compile="1" resource="0"

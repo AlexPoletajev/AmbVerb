@@ -1,7 +1,5 @@
 #pragma once
 
-#include <vecLib/vDSP.h>
-
 #include <algorithm>
 #include <cstddef>
 #include <memory>
@@ -55,39 +53,4 @@ public:
 private:
     std::unique_ptr<float[]> data;
     std::size_t bufferSize = 0;
-};
-
-class OwnedSplitComplex final : public DSPSplitComplex
-{
-public:
-    OwnedSplitComplex() noexcept
-    {
-        realp = nullptr;
-        imagp = nullptr;
-    }
-
-    void allocate(std::size_t size)
-    {
-        realStorage.allocate(size);
-        imaginaryStorage.allocate(size);
-        refreshPointers();
-    }
-
-    void swapWith(OwnedSplitComplex& other) noexcept
-    {
-        realStorage.swapWith(other.realStorage);
-        imaginaryStorage.swapWith(other.imaginaryStorage);
-        refreshPointers();
-        other.refreshPointers();
-    }
-
-private:
-    void refreshPointers() noexcept
-    {
-        realp = realStorage.get();
-        imagp = imaginaryStorage.get();
-    }
-
-    FloatBuffer realStorage;
-    FloatBuffer imaginaryStorage;
 };

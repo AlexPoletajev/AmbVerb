@@ -8,8 +8,6 @@
 
 #include "FeedbackDelayNetwork.hpp"
 
-#include <vecLib/cblas.h>
-
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -46,35 +44,9 @@ FDN::FDN() {
             perror("Error Allocating Memory"); return;
         }
 
-        fft_IR[i].allocate(fdn_Buffersize / 2);
-
-        if (fft_IR[i].realp == nullptr) {
-            perror("Error Allocating Memory"); return;
-        }
-
-        if (fft_IR[i].imagp == nullptr) {
-            perror("Error Allocating Memory"); return;
-        }
-
-        fft_IR_temp[i].allocate(fdn_Buffersize / 2);
-
-        if (fft_IR_temp[i].realp == nullptr) {
-            perror("Error Allocating Memory"); return;
-        }
-
-        if (fft_IR_temp[i].imagp == nullptr) {
-            perror("Error Allocating Memory"); return;
-        }
-
-        fft_Delaylines[i].allocate(fdn_Buffersize / 2);
-
-        if (fft_Delaylines[i].realp == nullptr) {
-            perror("Error Allocating Memory"); return;
-        }
-
-        if (fft_Delaylines[i].imagp == nullptr) {
-            perror("Error Allocating Memory"); return;
-        }
+        fft_IR[i].allocate(fdn_Buffersize);
+        fft_IR_temp[i].allocate(fdn_Buffersize);
+        fft_Delaylines[i].allocate(fdn_Buffersize);
 
         TempBuffer[i].allocate(fdn_Buffersize);
 
@@ -128,7 +100,7 @@ FDN::FDN() {
         perror("Error Allocating Memory"); return;
     }
 
-    fft_Input.allocate(fdn_Buffersize / 2);
+    fft_Input.allocate(fdn_Buffersize);
 
     /* --- --- --- ---  FeedBackMatrix Bereitstellen --- --- --- --- */
     int Hadamard[32][32] = { { 1, 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1  },
@@ -251,14 +223,6 @@ FDN::FDN() {
                          5861, 5867,  5869,  5879,  5881,  5897,  5903,  5923,  5927,  5939,  5953,  5981,  5987,  6007,
                          6011, 6029,  6037,  6043,  6047,  6053,  6067,  6073,  6079,  6089 };
     memcpy(&Primnumbers, &Prim, 794 * sizeof(int));
-    /* --- --- --- ---  FFT fftSetup --- --- --- --- */
-
-    fftSetup = vDSP_create_fftsetup(fdn_Log2N, FFT_RADIX2);
-
-    if (fftSetup == nullptr) {
-        throw std::runtime_error("Unable to create the FDN FFT setup");
-    }
-
     fdnVol = 0.7;
     T60Ratio = 0.25;
     T60 = 2.0;
@@ -274,11 +238,6 @@ FDN::FDN() {
     const juce::SpinLock::ScopedLockType lock(parameterLock);
     unlockParameters();
     unlockParamtersOnOff.store(false, std::memory_order_release);
-}
-
-FDN::~FDN() {
-    if (fftSetup != nullptr)
-        vDSP_destroy_fftsetup(fftSetup);
 }
 
 void FDN::prepare(double sampleRate, int maximumBlockSize) {
@@ -352,7 +311,7 @@ void FDN::processBlock(const float *Block, int DspBlocksize, double pB_Samplerat
     }
 
     for (int i = 0; i < NumAmbisonicsChannels; i++) {
-        vDSP_vclr(Output[i], 1, DspBlocksize);
+        juce::FloatVectorOperations::clear(Output[i], DspBlocksize);
     }
 
     memcpy(inBuffer, Block, DspBlocksize * sizeof(float)); // Eingangssignalvektor setzten
@@ -395,7 +354,11 @@ void FDN::processBlock(const float *Block, int DspBlocksize, double pB_Samplerat
                 u = u + NumDelaylines;
             }
 
-            vDSP_vsmul(Delayline_rightEnd[i - u], 1, &fdnVol, Output[i] + (Cycle * CustomBlocksize_temp), 1,  CustomBlocksize);
+            juce::FloatVectorOperations::copyWithMultiply(
+                Output[i] + (Cycle * CustomBlocksize_temp),
+                Delayline_rightEnd[i - u],
+                fdnVol,
+                CustomBlocksize);
         }
     }
 
@@ -419,7 +382,10 @@ void FDN::processBlock(const float *Block, int DspBlocksize, double pB_Samplerat
 
         // ...... Direktschall und Erstreflexionen subtrahieren ....... //
 
-        cblas_saxpy(DspBlocksize, -1.0 * fdnVol, EarlyReflectionsBuffer[i - u], 1, Output[i], 1);
+        juce::FloatVectorOperations::addWithMultiply(Output[i],
+                                                      EarlyReflectionsBuffer[i - u],
+                                                      -fdnVol,
+                                                      DspBlocksize);
     }
 }
 
@@ -496,7 +462,7 @@ void FDN::getIR() {
 }
 
 void FDN:: windowIR() {
-    vDSP_vclr(Window, 1, fdn_Buffersize);
+    Window.clear();
 
     const int windowStart = juce::jlimit(0, static_cast<int>(fdn_Buffersize), tMixStart);
     const int windowEnd = juce::jlimit(windowStart, static_cast<int>(fdn_Buffersize), tMixEnd);
@@ -520,16 +486,14 @@ void FDN:: windowIR() {
 
     //printf("WindowEnd\n");
 
-    vDSP_vclr(IR_TempBuffer1, 1, fdn_Buffersize);
+    IR_TempBuffer1.clear();
 
     for (int i = 0; i < NumDelaylines; i++) {
-        // Reinterpret Input as SplitComplex
-        vDSP_vmul(Window, 1, IR[i], 1, IR_TempBuffer1, 1, fdn_Buffersize);
-
-        vDSP_ctoz(reinterpret_cast<DSPComplex*>(IR_TempBuffer1.get()), 2, &fft_IR_temp[i], 1, fdn_Buffersize / 2);
-
-        // Perform a real-to-complex FFT.
-        vDSP_fft_zrip(fftSetup, &fft_IR_temp[i], 1, fdn_Log2N, FFT_FORWARD);
+        juce::FloatVectorOperations::multiply(IR_TempBuffer1,
+                                               Window,
+                                               IR[i],
+                                               fdn_Buffersize);
+        parameterFft.forwardVdspCompatible(IR_TempBuffer1, fft_IR_temp[i]);
     }
 }
 
@@ -547,35 +511,17 @@ void FDN::refreshWindow() {
 }
 
 void FDN::getWindowedOutput(const int aW_Blocksize) {
-    float NyquistBit;
-
-    for (int i = 0; i < NumDelaylines; i++) {
-        vDSP_vclr(fft_Delaylines[i].imagp, 1, fdn_Buffersize / 2);
-        vDSP_vclr(fft_Delaylines[i].realp, 1, fdn_Buffersize / 2);
-    }
-
-    vDSP_vclr(IR_TempBuffer1, 1, fdn_Buffersize);
+    IR_TempBuffer1.clear();
     memcpy(IR_TempBuffer1, inBuffer, aW_Blocksize * sizeof(float));
-
-    vDSP_ctoz((DSPComplex *)IR_TempBuffer1.get(), 2, &fft_Input, 1, fdn_Buffersize / 2);
-    vDSP_fft_zrip(fftSetup, &fft_Input, 1, fdn_Log2N, FFT_FORWARD);
+    runtimeFft.forwardVdspCompatible(IR_TempBuffer1, fft_Input);
 
     for (int i = 0; i < NumDelaylines; i++) {
-        vDSP_zvmov(&fft_Input, 1, &fft_Delaylines[i], 1, fdn_Buffersize / 2);
-
-        NyquistBit = fft_IR[i].imagp[0] * fft_Delaylines[i].imagp[0]; //Nyquistbit Correction
-        const float impulseNyquist = fft_IR[i].imagp[0];
-
-        fft_IR[i].imagp[0] = 0;
-        fft_Delaylines[i].imagp[0] = 0;
-
-        vDSP_zvmul(&fft_IR[i], 1, &fft_Delaylines[i], 1, &fft_Delaylines[i], 1, fdn_Buffersize / 2, 1);
-        fft_Delaylines[i].imagp[0] = NyquistBit;
-        fft_IR[i].imagp[0] = impulseNyquist;
-        vDSP_fft_zrip(fftSetup, &fft_Delaylines[i], 1, fdn_Log2N, FFT_INVERSE);
-        vDSP_ztoc(&fft_Delaylines[i], 1, reinterpret_cast<DSPComplex*>(TempBuffer[i].get()), 2, fdn_Buffersize / 2);
-
-        vDSP_vsma(TempBuffer[i], 1, &fftScale, EarlyReflectionsBuffer[i], 1, EarlyReflectionsBuffer[i], 1, fdn_Buffersize);
+        PortableRealFft::multiply(fft_IR[i], fft_Input, fft_Delaylines[i]);
+        runtimeFft.inverseVdspCompatible(fft_Delaylines[i], TempBuffer[i]);
+        juce::FloatVectorOperations::addWithMultiply(EarlyReflectionsBuffer[i],
+                                                      TempBuffer[i],
+                                                      fftScale,
+                                                      fdn_Buffersize);
     }
 }
 

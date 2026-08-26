@@ -2,14 +2,10 @@ cmake_minimum_required(VERSION 3.22)
 
 project(AmbVerb VERSION 1.0.0 LANGUAGES C CXX)
 
-if (NOT APPLE)
-    message(FATAL_ERROR
-        "AmbVerb currently requires macOS because its DSP implementation uses "
-        "Apple Accelerate/vDSP. A JUCE-DSP portability pass is planned separately.")
+if (APPLE)
+    enable_language(OBJC)
+    enable_language(OBJCXX)
 endif()
-
-enable_language(OBJC)
-enable_language(OBJCXX)
 
 include(FetchContent)
 
@@ -33,6 +29,14 @@ set(AMBVERB_BUNDLE_ID "com.alexanderpoletajev.ambverb"
     CACHE STRING "Plug-in bundle identifier")
 set(AMBVERB_PLUGIN_CODE "S0i0" CACHE STRING "Four-character plug-in code")
 
+set(AMBVERB_FORMATS VST3 Standalone)
+
+if (APPLE)
+    list(APPEND AMBVERB_FORMATS AU)
+elseif (UNIX)
+    list(APPEND AMBVERB_FORMATS LV2)
+endif()
+
 juce_add_binary_data(AmbVerbData
     NAMESPACE BinaryData
     SOURCES
@@ -47,7 +51,8 @@ juce_add_plugin(AmbVerb
     BUNDLE_ID "${AMBVERB_BUNDLE_ID}"
     PLUGIN_MANUFACTURER_CODE Manu
     PLUGIN_CODE "${AMBVERB_PLUGIN_CODE}"
-    FORMATS AU VST3 Standalone
+    LV2URI "https://github.com/AlexPoletajev/AmbVerb"
+    FORMATS ${AMBVERB_FORMATS}
     PRODUCT_NAME "${AMBVERB_PRODUCT_NAME}"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
@@ -71,6 +76,7 @@ target_sources(AmbVerb
         "${AMBVERB_SOURCE_DIR}/PluginEditor.h"
         "${AMBVERB_SOURCE_DIR}/PluginProcessor.cpp"
         "${AMBVERB_SOURCE_DIR}/PluginProcessor.h"
+        "${AMBVERB_SOURCE_DIR}/PortableDsp.hpp"
 )
 
 target_compile_features(AmbVerb PRIVATE cxx_std_17)
@@ -91,7 +97,6 @@ target_link_libraries(AmbVerb
         AmbVerbData
         juce::juce_audio_utils
         juce::juce_dsp
-        "-framework Accelerate"
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags

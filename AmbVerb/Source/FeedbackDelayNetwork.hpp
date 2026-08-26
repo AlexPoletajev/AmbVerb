@@ -2,13 +2,12 @@
 
 #include <juce_core/juce_core.h>
 
-#include <vecLib/vDSP.h>
-
 #include <atomic>
 #include <cmath>
 
 #include "BufferStorage.hpp"
 #include "CompilationFlags.h"
+#include "PortableDsp.hpp"
 
 inline const float maxGain = 0.999999f / std::sqrt(static_cast<float>(NumDelaylines));
 
@@ -16,7 +15,7 @@ class FDN
 {
 public:
     FDN();
-    ~FDN();
+    ~FDN() = default;
 
     void prepare(double sampleRate, int maximumBlockSize);
     void reset();
@@ -105,10 +104,11 @@ private:
     std::atomic<bool> unlockParamtersOnOff { false };
     juce::SpinLock parameterLock;
 
-    FFTSetup fftSetup = nullptr;
-    OwnedSplitComplex fft_IR[NumDelaylines];
-    OwnedSplitComplex fft_Delaylines[NumDelaylines];
-    OwnedSplitComplex fft_IR_temp[NumDelaylines];
-    OwnedSplitComplex fft_Input;
+    SpectrumBuffer fft_IR[NumDelaylines];
+    SpectrumBuffer fft_Delaylines[NumDelaylines];
+    SpectrumBuffer fft_IR_temp[NumDelaylines];
+    SpectrumBuffer fft_Input;
+    PortableRealFft runtimeFft { fdn_Log2N };
+    PortableRealFft parameterFft { fdn_Log2N };
     float fftScale = 0.0f;
 };

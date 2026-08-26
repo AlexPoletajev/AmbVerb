@@ -10,12 +10,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <math.h>
 #include <sstream>
-#include <stdexcept>
 #include "EarlyReflections.hpp"
-
-#include <vecLib/cblas.h>
 
 EarlyRef::EarlyRef() {
     earlyrefVolume = 0.7;
@@ -58,31 +54,10 @@ EarlyRef::EarlyRef() {
         perror("Error Allocating Memory"); return;
     }
 
-    SplitComplexBuffer1.allocate(earlyref_Buffersize / 2);
-
-    if (SplitComplexBuffer1.realp == nullptr) {
-        perror("Error Allocating Memory"); return;
-    }
-
-    if (SplitComplexBuffer1.imagp == nullptr) {
-        perror("Error Allocating Memory"); return;
-    }
-
-    SplitComplexBuffer2.allocate(earlyref_Buffersize / 2);
-
-    if (SplitComplexBuffer2.realp == nullptr) {
-        perror("Error Allocating Memory"); return;
-    }
-
-    if (SplitComplexBuffer2.imagp == nullptr) {
-        perror("Error Allocating Memory"); return;
-    }
+    audioInputSpectrum.allocate(earlyref_Buffersize);
+    matrixProductSpectrum.allocate(earlyref_Buffersize);
 
     fftScale = 0.5f / (float)(16.0f * earlyref_Buffersize);
-    fftConvSetup = vDSP_create_fftsetup(earlyref_Log2N, FFT_RADIX2);
-
-    if (fftConvSetup == nullptr)
-        throw std::runtime_error("Unable to create the early-reflections FFT setup");
 
     //......
 
@@ -133,55 +108,11 @@ EarlyRef::EarlyRef() {
                 perror("Error Allocating Memory"); return;
             }
 
-            fft_Rx[i][u].allocate(earlyref_Buffersize / 2);
-
-            if (fft_Rx[i][u].realp == nullptr) {
-                perror("Error Allocating Memory"); return;
-            }
-
-            if (fft_Rx[i][u].imagp == nullptr) {
-                perror("Error Allocating Memory"); return;
-            }
-
-            fft_Ry[i][u].allocate(earlyref_Buffersize / 2);
-
-            if (fft_Ry[i][u].realp == nullptr) {
-                perror("Error Allocating Memory"); return;
-            }
-
-            if (fft_Ry[i][u].imagp == nullptr) {
-                perror("Error Allocating Memory"); return;
-            }
-
-            fft_Rz[i][u].allocate(earlyref_Buffersize / 2);
-
-            if (fft_Rz[i][u].realp == nullptr) {
-                perror("Error Allocating Memory"); return;
-            }
-
-            if (fft_Rz[i][u].imagp  == nullptr) {
-                perror("Error Allocating Memory"); return;
-            }
-
-            fft_Rxyz[i][u].allocate(earlyref_Buffersize / 2);
-
-            if (fft_Rxyz[i][u].realp == nullptr) {
-                perror("Error Allocating Memory"); return;
-            }
-
-            if (fft_Rxyz[i][u].imagp == nullptr) {
-                perror("Error Allocating Memory"); return;
-            }
-
-            fft_Rxyz_TEMP[i][u].allocate(earlyref_Buffersize / 2);
-
-            if (fft_Rxyz_TEMP[i][u].realp == nullptr) {
-                perror("Error Allocating Memory"); return;
-            }
-
-            if (fft_Rxyz_TEMP[i][u].imagp == nullptr) {
-                perror("Error Allocating Memory"); return;
-            }
+            fft_Rx[i][u].allocate(earlyref_Buffersize);
+            fft_Ry[i][u].allocate(earlyref_Buffersize);
+            fft_Rz[i][u].allocate(earlyref_Buffersize);
+            fft_Rxyz[i][u].allocate(earlyref_Buffersize);
+            fft_Rxyz_TEMP[i][u].allocate(earlyref_Buffersize);
         }
     }
 
@@ -195,11 +126,6 @@ EarlyRef::EarlyRef() {
 
     Phi = 80.0;
     Q = 400.0;
-}
-
-EarlyRef::~EarlyRef() {
-    if (fftConvSetup != nullptr)
-        vDSP_destroy_fftsetup(fftConvSetup);
 }
 
 void EarlyRef::reset() {
@@ -225,7 +151,7 @@ void EarlyRef::processBlock(const float *const Block[], int DspBlocksize, double
     UnlockRotationMatrixForCalculaion();
 
     for (int i = 0; i < NumAmbisonicsChannels; i++) {
-        vDSP_vclr(InBuffer[i], 1, earlyref_Buffersize);
+        juce::FloatVectorOperations::clear(InBuffer[i], earlyref_Buffersize);
         memcpy(InBuffer[i], Block[i], DspBlocksize * sizeof(float));
     }
 
@@ -243,11 +169,12 @@ void EarlyRef::processBlock(const float *const Block[], int DspBlocksize, double
                                           FilterBuffer,
                                           DspBlocksize); //Lowpass Filterung
         memcpy(Output[i], FilterBuffer, DspBlocksize * sizeof(float));
-        vDSP_vsmul(Output[i], 1, &earlyrefVolume, Output[i], 1, DspBlocksize);
+        juce::FloatVectorOperations::multiply(Output[i], earlyrefVolume, DspBlocksize);
 
         // - - - - - Vorbereitung für den nächsten Block - - - - -
         memmove(OutBuffer[i], OutBuffer[i] + DspBlocksize, (earlyref_Buffersize - DspBlocksize) * sizeof(float));
-        vDSP_vclr(OutBuffer[i] + (earlyref_Buffersize - DspBlocksize), 1, DspBlocksize);
+        juce::FloatVectorOperations::clear(
+            OutBuffer[i] + (earlyref_Buffersize - DspBlocksize), DspBlocksize);
     }
 }
 
@@ -258,8 +185,11 @@ void EarlyRef:: MatrixConvolution() {
     for (int m = 0; m < NumAmbisonicsChannels; m++) {
         for (int b = 0; b < NumAmbisonicsChannels; b++) {
             if (NonZeroEntriesXYZ[m][b] == 1) {
-                FFTconvolution(InBuffer[b], &fft_Rxyz[m][b], FFTconvBuffer1);
-                vDSP_vsma(FFTconvBuffer1, 1, &fftScale, OutBuffer[m], 1, OutBuffer[m], 1, earlyref_Buffersize);
+                FFTconvolution(InBuffer[b], fft_Rxyz[m][b], FFTconvBuffer1);
+                juce::FloatVectorOperations::addWithMultiply(OutBuffer[m],
+                                                              FFTconvBuffer1,
+                                                              fftScale,
+                                                              earlyref_Buffersize);
             }
         }
     }
@@ -268,42 +198,27 @@ void EarlyRef:: MatrixConvolution() {
 /* === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === */
 // FFT Convolution of IR and IR
 /* === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === */
-void EarlyRef:: FFTconvolution(float *Signal1, DSPSplitComplex *Signal2, float *FFTConvolutionBuffer) {
-    float NyquistBit;
-    const float impulseNyquist = Signal2->imagp[0];
-
-    // - - - - - Reinterpret Input as SplitComplex - - - - - //
-    vDSP_ctoz((DSPComplex *)Signal1, 2, &SplitComplexBuffer1, 1, earlyref_Buffersize / 2);
-
-    // - - - - - fft transformation - - - - - //
-    vDSP_fft_zrip(fftConvSetup, &SplitComplexBuffer1, 1, earlyref_Log2N, FFT_FORWARD);
-
-    // - - - - - Nyquistbit Correction - - - - - //
-    NyquistBit = SplitComplexBuffer1.imagp[0] * (*Signal2).imagp[0];
-    SplitComplexBuffer1.imagp[0] = 0;
-    (*Signal2).imagp[0] = 0;
-
-    // - - - - - Multiplikation - - - - - //
-    vDSP_zvmul(&SplitComplexBuffer1, 1, Signal2, 1, &SplitComplexBuffer1, 1, earlyref_Buffersize / 2, 1);
-    SplitComplexBuffer1.imagp[0] = NyquistBit;
-    Signal2->imagp[0] = impulseNyquist;
-
-    // - - - - - inverse Transformation- - - - - //
-    vDSP_fft_zrip(fftConvSetup, &SplitComplexBuffer1, 1, earlyref_Log2N, FFT_INVERSE);
-
-    // - - - - - Reinterpret as floats Vector - - - - - //
-    vDSP_ztoc(&SplitComplexBuffer1, 1, (DSPComplex *)FFTConvolutionBuffer, 2, earlyref_Buffersize / 2);
+void EarlyRef::FFTconvolution(float* signal,
+                             const SpectrumBuffer& impulseResponse,
+                             float* convolutionBuffer) {
+    audioFft.forwardVdspCompatible(signal, audioInputSpectrum);
+    PortableRealFft::multiply(audioInputSpectrum,
+                              impulseResponse,
+                              audioInputSpectrum);
+    audioFft.inverseVdspCompatible(audioInputSpectrum, convolutionBuffer);
 }
 
 float EarlyRef:: h(float alpha, float beta, int lambda) {
-    return cosf(M_PI / 2.0 * abs(lambda) + beta) * jn(abs(lambda), fabs(alpha));
+    return std::cos(juce::MathConstants<float>::halfPi * std::abs(lambda) + beta)
+        * static_cast<float>(std::cyl_bessel_j(std::abs(lambda),
+                                               static_cast<double>(std::abs(alpha))));
 }
 
 void EarlyRef:: fillhBuffer(float phi, int offset, int Q) {
     int m, i, lambda;
 
     for (i = 0; i < (AmbisonicsOrder * 2 + 1) * 2; i++) {
-        cblas_sscal(earlyref_Buffersize, 0.0, hBuffer[i], 1);
+        hBuffer[i].clear();
     }
 
     i = 0;
@@ -311,7 +226,9 @@ void EarlyRef:: fillhBuffer(float phi, int offset, int Q) {
     for (m = -AmbisonicsOrder; m <= AmbisonicsOrder; m++) {
         for (lambda = 0; lambda <= offset * 2; lambda++) { // lambda = offset-1 :: Abschneiden der linksseitigen Teils
             if (m < 0) {
-                *(hBuffer[i] + Q * lambda) = h(m * phi, -M_PI / 2, lambda - offset);
+                *(hBuffer[i] + Q * lambda) = h(m * phi,
+                                               -juce::MathConstants<float>::halfPi,
+                                               lambda - offset);
                 //printf("lambda-offset=%i  m=%i  hBuffer[%i] = %f",lambda-offset,m,i,*(hBuffer[i]+Q*lambda));
             } else if (m > 0) {
                 *(hBuffer[i] + Q * lambda) = h(m * phi, 0, lambda - offset);
@@ -329,7 +246,9 @@ void EarlyRef:: fillhBuffer(float phi, int offset, int Q) {
                 *(hBuffer[i] + Q * lambda) = h(m * phi, 0, lambda - offset);
                 //printf("lambda-offset=%i  m=%i  hBuffer[%i] = %f",lambda-offset,m,i,*(hBuffer[i]+Q*lambda));
             } else if (m > 0) {
-                *(hBuffer[i] + Q * lambda) = h(m * phi, M_PI / 2, lambda - offset);
+                *(hBuffer[i] + Q * lambda) = h(m * phi,
+                                               juce::MathConstants<float>::halfPi,
+                                               lambda - offset);
                 //printf("lambda-offset=%i  m=%i  hBuffer[%i] = %f",lambda-offset,m,i,*(hBuffer[i]+Q*lambda));
             } else {
                 *(hBuffer[i] + Q * lambda) = h(m * phi, 0, lambda - offset);
@@ -346,40 +265,49 @@ void EarlyRef:: CalculateRz(int QValue, float PhiValue) {
 
     for (l = 0; l < NumAmbisonicsChannels; l++) {            // set Rz to zero
         for (m = 0; m < NumAmbisonicsChannels; m++) {
-            cblas_sscal(earlyref_Buffersize, 0.0, Rz10[l][m], 1);
-            cblas_sscal(earlyref_Buffersize, 0.0, Rz13[l][m], 1);
-            cblas_sscal(earlyref_Buffersize, 0.0, Rz19[l][m], 1);
+            Rz10[l][m].clear();
+            Rz13[l][m].clear();
+            Rz19[l][m].clear();
         }
     }
 
-    fillhBuffer(PhiValue / 360.0 * 2.0 * M_PI, Trunc, (int)(QValue));
+    fillhBuffer(static_cast<float>(PhiValue / 360.0
+                                   * juce::MathConstants<double>::twoPi),
+                Trunc,
+                QValue);
 
     i = 0;
 
     for (l = 0; l <= AmbisonicsOrder; l++) {
         for (m = -l; m <= l; m++) {
-            memcpy(Rz10[l * (l + 1) + m][l * (l + 1) + abs(m)], hBuffer[(m + AmbisonicsOrder) * 2], earlyref_Buffersize * sizeof(float));
-            memcpy(Rz10[l * (l + 1) + m][l * (l + 1) - abs(m)], hBuffer[(m + AmbisonicsOrder) * 2 + 1], earlyref_Buffersize * sizeof(float));
+            memcpy(Rz10[l * (l + 1) + m][l * (l + 1) + std::abs(m)], hBuffer[(m + AmbisonicsOrder) * 2], earlyref_Buffersize * sizeof(float));
+            memcpy(Rz10[l * (l + 1) + m][l * (l + 1) - std::abs(m)], hBuffer[(m + AmbisonicsOrder) * 2 + 1], earlyref_Buffersize * sizeof(float));
         }
     }
 
-    fillhBuffer(PhiValue / 360.0 * 2.0 * M_PI, Trunc, (int)(QValue * Qy));
+    fillhBuffer(static_cast<float>(PhiValue / 360.0
+                                   * juce::MathConstants<double>::twoPi),
+                Trunc,
+                static_cast<int>(QValue * Qy));
     i = 0;
 
     for (l = 0; l <= AmbisonicsOrder; l++) {
         for (m = -l; m <= l; m++) {
-            memcpy(Rz13[l * (l + 1) + m][l * (l + 1) + abs(m)], hBuffer[(m + AmbisonicsOrder) * 2], earlyref_Buffersize * sizeof(float));
-            memcpy(Rz13[l * (l + 1) + m][l * (l + 1) - abs(m)], hBuffer[(m + AmbisonicsOrder) * 2 + 1], earlyref_Buffersize * sizeof(float));
+            memcpy(Rz13[l * (l + 1) + m][l * (l + 1) + std::abs(m)], hBuffer[(m + AmbisonicsOrder) * 2], earlyref_Buffersize * sizeof(float));
+            memcpy(Rz13[l * (l + 1) + m][l * (l + 1) - std::abs(m)], hBuffer[(m + AmbisonicsOrder) * 2 + 1], earlyref_Buffersize * sizeof(float));
         }
     }
 
-    fillhBuffer(PhiValue / 360.0 * 2.0 * M_PI, Trunc, (int)(QValue * Qx));
+    fillhBuffer(static_cast<float>(PhiValue / 360.0
+                                   * juce::MathConstants<double>::twoPi),
+                Trunc,
+                static_cast<int>(QValue * Qx));
     i = 0;
 
     for (l = 0; l <= AmbisonicsOrder; l++) {
         for (m = -l; m <= l; m++) {
-            memcpy(Rz19[l * (l + 1) + m][l * (l + 1) + abs(m)], hBuffer[(m + AmbisonicsOrder) * 2], earlyref_Buffersize * sizeof(float));
-            memcpy(Rz19[l * (l + 1) + m][l * (l + 1) - abs(m)], hBuffer[(m + AmbisonicsOrder) * 2 + 1], earlyref_Buffersize * sizeof(float));
+            memcpy(Rz19[l * (l + 1) + m][l * (l + 1) + std::abs(m)], hBuffer[(m + AmbisonicsOrder) * 2], earlyref_Buffersize * sizeof(float));
+            memcpy(Rz19[l * (l + 1) + m][l * (l + 1) - std::abs(m)], hBuffer[(m + AmbisonicsOrder) * 2 + 1], earlyref_Buffersize * sizeof(float));
         }
     }
 
@@ -396,7 +324,7 @@ void EarlyRef:: CalculateRx() {
 
     for (a = 0; a < NumAmbisonicsChannels; a++) {            // set DummyMatrix to zero
         for (b = 0; b < NumAmbisonicsChannels; b++) {
-            cblas_sscal(earlyref_Buffersize, 0.0, DummyMatrix1[a][b], 1);
+            DummyMatrix1[a][b].clear();
         }
     }
 
@@ -407,7 +335,10 @@ void EarlyRef:: CalculateRx() {
             for (i = 0; i < NumAmbisonicsChannels; i++) {
                 //if (NonZeroEntriesZ[i][b]==1) {
 
-                cblas_saxpy(earlyref_Buffersize, Rxz[a][i], Rz19[i][b], 1, DummyMatrix1[a][b], 1);
+                juce::FloatVectorOperations::addWithMultiply(DummyMatrix1[a][b],
+                                                              Rz19[i][b],
+                                                              Rxz[a][i],
+                                                              earlyref_Buffersize);
                 //}
             }
         }
@@ -423,14 +354,17 @@ void EarlyRef:: CalculateRx() {
 
     for (a = 0; a < NumAmbisonicsChannels; a++) {            // set DummyMatrix to zero
         for (b = 0; b < NumAmbisonicsChannels; b++) {
-            cblas_sscal(earlyref_Buffersize, 0.0, DummyMatrix1[a][b], 1);
+            DummyMatrix1[a][b].clear();
         }
     }
 
     for (a = 0; a < NumAmbisonicsChannels; a++) {            //Multiplication
         for (b = 0; b < NumAmbisonicsChannels; b++) {
             for (i = 0; i < NumAmbisonicsChannels; i++) {
-                cblas_saxpy(earlyref_Buffersize, Rzx[i][b], Rx[a][i], 1, DummyMatrix1[a][b], 1);
+                juce::FloatVectorOperations::addWithMultiply(DummyMatrix1[a][b],
+                                                              Rx[a][i],
+                                                              Rzx[i][b],
+                                                              earlyref_Buffersize);
             }
         }
     }
@@ -454,7 +388,7 @@ void EarlyRef:: CalculateRy() {
 
     for (a = 0; a < NumAmbisonicsChannels; a++) {            // set DummyMatrix to zero
         for (b = 0; b < NumAmbisonicsChannels; b++) {
-            cblas_sscal(earlyref_Buffersize, 0.0, DummyMatrix1[a][b], 1);
+            DummyMatrix1[a][b].clear();
         }
     }
 
@@ -463,7 +397,10 @@ void EarlyRef:: CalculateRy() {
     for (a = 0; a < NumAmbisonicsChannels; a++) {            //Multiplication
         for (b = 0; b < NumAmbisonicsChannels; b++) {
             for (i = 0; i < NumAmbisonicsChannels; i++) {
-                cblas_saxpy(earlyref_Buffersize, Ryz[a][i], Rz13[i][b], 1, DummyMatrix1[a][b], 1);
+                juce::FloatVectorOperations::addWithMultiply(DummyMatrix1[a][b],
+                                                              Rz13[i][b],
+                                                              Ryz[a][i],
+                                                              earlyref_Buffersize);
             }
         }
     }
@@ -478,14 +415,17 @@ void EarlyRef:: CalculateRy() {
 
     for (a = 0; a < NumAmbisonicsChannels; a++) {            // set DummyMatrix to zero
         for (b = 0; b < NumAmbisonicsChannels; b++) {
-            cblas_sscal(earlyref_Buffersize, 0.0, DummyMatrix1[a][b], 1);
+            DummyMatrix1[a][b].clear();
         }
     }
 
     for (a = 0; a < NumAmbisonicsChannels; a++) {            //Multiplication
         for (b = 0; b < NumAmbisonicsChannels; b++) {
             for (i = 0; i < NumAmbisonicsChannels; i++) {
-                cblas_saxpy(earlyref_Buffersize, Rzy[i][b], Ry[a][i], 1, DummyMatrix1[a][b], 1);
+                juce::FloatVectorOperations::addWithMultiply(DummyMatrix1[a][b],
+                                                              Ry[a][i],
+                                                              Rzy[i][b],
+                                                              earlyref_Buffersize);
             }
         }
     }
@@ -500,140 +440,74 @@ void EarlyRef:: CalculateRy() {
 }
 
 void EarlyRef:: CalculateRxyz() {
-    int a, b, c;
-    float NyquistBit;
+    for (int a = 0; a < NumAmbisonicsChannels; ++a) {
+        for (int b = 0; b < NumAmbisonicsChannels; ++b) {
+            fft_Rx[a][b].clear();
+            fft_Ry[a][b].clear();
+            fft_Rz[a][b].clear();
+            fft_Rxyz_TEMP[a][b].clear();
 
-    /* ****** ****** ****** ****** ****** ****** ****** ****** ****** ****** ****** ****** ****** ****** */
-
-    // Initialize data for the FFT routines.
-    FFTSetup Setup = vDSP_create_fftsetup(earlyref_Log2N, FFT_RADIX2);
-
-    if (Setup == NULL) {
-        throw std::runtime_error("Unable to create the rotation-matrix FFT setup");
-    }
-
-    for (a = 0; a < NumAmbisonicsChannels; a++) {            // set to zero
-        for (b = 0; b < NumAmbisonicsChannels; b++) {
-            vDSP_vclr(fft_Rx[a][b].imagp, 1, earlyref_Buffersize / 2);
-            vDSP_vclr(fft_Rx[a][b].realp, 1, earlyref_Buffersize / 2);
-            vDSP_vclr(fft_Ry[a][b].imagp, 1, earlyref_Buffersize / 2);
-            vDSP_vclr(fft_Ry[a][b].realp, 1, earlyref_Buffersize / 2);
-            vDSP_vclr(fft_Rz[a][b].imagp, 1, earlyref_Buffersize / 2);
-            vDSP_vclr(fft_Rz[a][b].realp, 1, earlyref_Buffersize / 2);
-            vDSP_vclr(fft_Rxyz_TEMP[a][b].imagp, 1, earlyref_Buffersize / 2);
-            vDSP_vclr(fft_Rxyz_TEMP[a][b].realp, 1, earlyref_Buffersize / 2);
+            matrixFft.forwardVdspCompatible(Rx[a][b], fft_Rx[a][b]);
+            matrixFft.forwardVdspCompatible(Ry[a][b], fft_Ry[a][b]);
+            matrixFft.forwardVdspCompatible(Rz10[a][b], fft_Rz[a][b]);
         }
     }
 
-    for (a = 0; a < NumAmbisonicsChannels; a++) {
-        for (b = 0; b < NumAmbisonicsChannels; b++) {
-            // Reinterpret Input as SplitComplex
-            vDSP_ctoz(reinterpret_cast<DSPComplex*>(Rx[a][b].get()), 2, &fft_Rx[a][b], 1, earlyref_Buffersize / 2);
-
-            // Perform a real-to-complex FFT.
-            vDSP_fft_zrip(Setup, &fft_Rx[a][b], 1, earlyref_Log2N, FFT_FORWARD);
-
-            vDSP_ctoz(reinterpret_cast<DSPComplex*>(Ry[a][b].get()), 2, &fft_Ry[a][b], 1, earlyref_Buffersize / 2);
-
-            vDSP_fft_zrip(Setup, &fft_Ry[a][b], 1, earlyref_Log2N, FFT_FORWARD);//???? log2n ?
-
-            vDSP_ctoz(reinterpret_cast<DSPComplex*>(Rz10[a][b].get()), 2, &fft_Rz[a][b], 1, earlyref_Buffersize / 2);
-
-            vDSP_fft_zrip(Setup, &fft_Rz[a][b], 1, earlyref_Log2N, FFT_FORWARD);
-        }
-    }
-
-    vDSP_destroy_fftsetup(Setup);
-
-    /* ****** ****** ****** ****** ****** ****** ****** ****** ****** ****** ****** ****** ****** ****** */
-
-    for (a = 0; a < NumAmbisonicsChannels; a++) {
-        for (b = 0; b < NumAmbisonicsChannels; b++) {
-            for (c = 0; c < NumAmbisonicsChannels; c++) {
+    for (int a = 0; a < NumAmbisonicsChannels; ++a) {
+        for (int b = 0; b < NumAmbisonicsChannels; ++b) {
+            for (int c = 0; c < NumAmbisonicsChannels; ++c) {
                 if (NonZeroEntriesZ[a][c] == 1 && NonZeroEntriesY[c][b] == 1) {
-                    const float zNyquist = fft_Rz[a][c].imagp[0];
-                    const float yNyquist = fft_Ry[c][b].imagp[0];
-                    NyquistBit = zNyquist * yNyquist; //Nyquistbit Correction
-                    fft_Rz[a][c].imagp[0] = 0;
-                    fft_Ry[c][b].imagp[0] = 0;
-
-                    vDSP_zvmul(&fft_Rz[a][c], 1, &fft_Ry[c][b], 1, &SplitComplexBuffer2, 1, earlyref_Buffersize / 2, 1);
-                    SplitComplexBuffer2.imagp[0] = NyquistBit;
-                    fft_Rz[a][c].imagp[0] = zNyquist;
-                    fft_Ry[c][b].imagp[0] = yNyquist;
-                    vDSP_zvadd(&SplitComplexBuffer2, 1, &fft_Rxyz_TEMP[a][b], 1, &fft_Rxyz_TEMP[a][b], 1, earlyref_Buffersize / 2);
+                    PortableRealFft::multiply(fft_Rz[a][c],
+                                              fft_Ry[c][b],
+                                              matrixProductSpectrum);
+                    PortableRealFft::add(matrixProductSpectrum, fft_Rxyz_TEMP[a][b]);
                 }
             }
         }
     }
 
-    for (a = 0; a < NumAmbisonicsChannels; a++) {            // set to zero for use as dummy variable
-        for (b = 0; b < NumAmbisonicsChannels; b++) {
-            vDSP_vclr(fft_Rz[a][b].imagp, 1, earlyref_Buffersize / 2);
-            vDSP_vclr(fft_Rz[a][b].realp, 1, earlyref_Buffersize / 2);
-        }
-    }
+    for (int a = 0; a < NumAmbisonicsChannels; ++a)
+        for (int b = 0; b < NumAmbisonicsChannels; ++b)
+            fft_Rz[a][b].clear();
 
-    for (a = 0; a < NumAmbisonicsChannels; a++) {
-        for (b = 0; b < NumAmbisonicsChannels; b++) {
-            for (c = 0; c < NumAmbisonicsChannels; c++) {
+    for (int a = 0; a < NumAmbisonicsChannels; ++a) {
+        for (int b = 0; b < NumAmbisonicsChannels; ++b) {
+            for (int c = 0; c < NumAmbisonicsChannels; ++c) {
                 if (NonZeroEntriesX[c][b] == 1) {
-                    const float xNyquist = fft_Rx[c][b].imagp[0];
-                    const float partialNyquist = fft_Rxyz_TEMP[a][c].imagp[0];
-                    NyquistBit = xNyquist * partialNyquist; //Nyquistbit Correction
-                    fft_Rx[c][b].imagp[0] = 0;
-                    fft_Rxyz_TEMP[a][c].imagp[0] = 0;
-
-
-                    vDSP_zvmul(&fft_Rx[c][b], 1, &fft_Rxyz_TEMP[a][c], 1, &SplitComplexBuffer2, 1, earlyref_Buffersize / 2, 1);
-                    SplitComplexBuffer2.imagp[0] = NyquistBit;
-                    fft_Rx[c][b].imagp[0] = xNyquist;
-                    fft_Rxyz_TEMP[a][c].imagp[0] = partialNyquist;
-                    vDSP_zvadd(&SplitComplexBuffer2, 1, &fft_Rz[a][b], 1, &fft_Rz[a][b], 1, earlyref_Buffersize / 2);
+                    PortableRealFft::multiply(fft_Rx[c][b],
+                                              fft_Rxyz_TEMP[a][c],
+                                              matrixProductSpectrum);
+                    PortableRealFft::add(matrixProductSpectrum, fft_Rz[a][b]);
                 }
             }
         }
     }
 
-    // . . . ..
+    OnsetLength = static_cast<int>(Q_TEMP * (1.0f + Qx + Qy) * Trunc);
 
-    for (a = 0; a < NumAmbisonicsChannels; a++) {
-        for (b = 0; b < NumAmbisonicsChannels; b++) {
-            OnsetLength = (int)(Q_TEMP * (1.0 + (float)Qx + (float)Qy) * (float)Trunc);
+    for (int a = 0; a < NumAmbisonicsChannels; ++a) {
+        for (int b = 0; b < NumAmbisonicsChannels; ++b) {
+            matrixFft.inverseVdspCompatible(fft_Rz[a][b], Rxyz[a][b]);
+            juce::FloatVectorOperations::multiply(Rxyz[a][b],
+                                                   fftScale * 8.0f,
+                                                   earlyref_Buffersize);
 
+            const auto nominalOnsetOffset = static_cast<std::size_t>(
+                juce::jmax(0, OnsetLength - 10));
 
-            // - - - - - inverse Transformation- - - - - //
-            vDSP_fft_zrip(fftConvSetup, &fft_Rz[a][b], 1, earlyref_Log2N, FFT_INVERSE);
-
-            // - - - - - Reinterpret as floats Vector - - - - - //
-            vDSP_ztoc(&fft_Rz[a][b], 1, reinterpret_cast<DSPComplex*>(Rxyz[a][b].get()), 2, earlyref_Buffersize / 2);
-
-            cblas_sscal(earlyref_Buffersize, fftScale * 8.0, Rxyz[a][b], 1);
-
-            vDSP_vclr(fft_Rz[a][b].imagp, 1, earlyref_Buffersize / 2);
-            vDSP_vclr(fft_Rz[a][b].realp, 1, earlyref_Buffersize / 2);
-
-            const auto onsetOffset = static_cast<std::size_t>(juce::jmax(0, OnsetLength - 10));
+            // The old vDSP path read this data as DSPComplex pairs. Preserve
+            // its observed odd-sample crop phase, retaining the preceding
+            // sample whenever the nominal offset is even.
+            const auto onsetOffset = nominalOnsetOffset
+                - static_cast<std::size_t>((nominalOnsetOffset & 1U) == 0U);
             jassert(onsetOffset + earlyref_Buffersize <= Rxyz[a][b].size());
-            vDSP_ctoz((DSPComplex *)(Rxyz[a][b] + onsetOffset), 2, &fft_Rz[a][b], 1, earlyref_Buffersize / 2);
-            //vDSP_ctoz((DSPComplex *) Rxyz[a][b], 2, &fft_Rz[a][b], 1, earlyref_Buffersize/2);
-
-
-            vDSP_fft_zrip(fftConvSetup, &fft_Rz[a][b], 1, earlyref_Log2N, FFT_FORWARD);
-
-
-
-            //printf("wow");
+            matrixFft.forwardVdspCompatible(Rxyz[a][b] + onsetOffset, fft_Rz[a][b]);
         }
     }
 
-    // . . . ..
-
-    for (a = 0; a < NumAmbisonicsChannels; a++) {            // Copy results to fft_Rxyz_TEMP
-        for (b = 0; b < NumAmbisonicsChannels; b++) {
-            vDSP_zvmov(&fft_Rz[a][b], 1, &fft_Rxyz_TEMP[a][b], 1, earlyref_Buffersize / 2);
-        }
-    }
+    for (int a = 0; a < NumAmbisonicsChannels; ++a)
+        for (int b = 0; b < NumAmbisonicsChannels; ++b)
+            PortableRealFft::copy(fft_Rz[a][b], fft_Rxyz_TEMP[a][b]);
 
     CheckforNonZeroEntriesXYZ();
 }
@@ -725,10 +599,12 @@ void EarlyRef::CheckforNonZeroEntriesXYZ() {
 
     for (a = 0; a < NumAmbisonicsChannels; a++) {
         for (b = 0; b < NumAmbisonicsChannels; b++) {
-            for (i = 0; i < static_cast<int>(earlyref_Buffersize / 2); i++) {
-                if (  (fabsf(fft_Rxyz_TEMP[a][b].realp[i]) >= 0.000001) || (fabsf(fft_Rxyz_TEMP[a][b].imagp[i]) >= 0.000001)) {
+            for (i = 0; i < static_cast<int>(fft_Rxyz_TEMP[a][b].getNumBins()); i++) {
+                if ((std::abs(fft_Rxyz_TEMP[a][b].real(static_cast<std::size_t>(i)))
+                     >= 0.000001f)
+                    || (std::abs(fft_Rxyz_TEMP[a][b].imag(static_cast<std::size_t>(i)))
+                        >= 0.000001f)) {
                     NonZeroEntriesXYZ_TEMP[a][b] = 1;
-                    //printf("Zeros[%i][%i] : Re=%f   Im=%f\n",a,b,fft_Rxyz_TEMP[a][b].realp[i],fft_Rxyz_TEMP[a][b].imagp[i]);
                     break;
                 }
             }

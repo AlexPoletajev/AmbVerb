@@ -1,0 +1,56 @@
+name: Windows and Linux build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            targets: AmbVerb_Standalone AmbVerb_VST3 AmbVerbAudioRegression
+          - os: ubuntu-24.04
+            targets: AmbVerb_Standalone AmbVerb_VST3 AmbVerb_LV2 AmbVerbAudioRegression
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libasound2-dev libjack-jackd2-dev ladspa-sdk
+          libfreetype-dev libfontconfig1-dev
+          libx11-dev libxcomposite-dev libxcursor-dev libxext-dev
+          libxinerama-dev libxrandr-dev libxrender-dev xvfb
+
+      - name: Configure
+        run: cmake -S . -B Build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: >-
+          cmake --build Build --config Release --parallel 3
+          --target ${{ matrix.targets }}
+
+      - name: Run tests on Windows
+        if: runner.os == 'Windows'
+        run: ctest --test-dir Build -C Release --output-on-failure
+
+      - name: Run tests on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a ctest --test-dir Build -C Release --output-on-failure
+
+      - name: Upload audio comparison artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ambverb-audio-regression-${{ runner.os }}-${{ github.sha }}
+          path: Build/AudioRegression/
+          if-no-files-found: warn
+          retention-days: 30

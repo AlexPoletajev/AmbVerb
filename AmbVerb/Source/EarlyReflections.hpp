@@ -2,19 +2,18 @@
 
 #include <juce_core/juce_core.h>
 
-#include <vecLib/vDSP.h>
-
 #include <atomic>
 #include <string_view>
 
 #include "BufferStorage.hpp"
 #include "CompilationFlags.h"
+#include "PortableDsp.hpp"
 
 class EarlyRef
 {
 public:
     EarlyRef();
-    ~EarlyRef();
+    ~EarlyRef() = default;
 
     void processBlock(const float* const block[], int dspBlockSize, double sampleRate);
     void reset();
@@ -57,7 +56,7 @@ private:
     void CheckforNonZeroEntriesXYZ();
     void MatrixConvolution();
     void FFTconvolution(float* signal,
-                        DSPSplitComplex* impulseResponse,
+                        const SpectrumBuffer& impulseResponse,
                         float* convolutionBuffer);
     float LowPass(float* input,
                   double gain,
@@ -93,15 +92,16 @@ private:
     int NonZeroEntriesXYZ[NumAmbisonicsChannels][NumAmbisonicsChannels] {};
     int NonZeroEntriesXYZ_TEMP[NumAmbisonicsChannels][NumAmbisonicsChannels] {};
 
-    OwnedSplitComplex fft_Rxyz[NumAmbisonicsChannels][NumAmbisonicsChannels];
-    OwnedSplitComplex fft_Rxyz_TEMP[NumAmbisonicsChannels][NumAmbisonicsChannels];
-    OwnedSplitComplex fft_Rx[NumAmbisonicsChannels][NumAmbisonicsChannels];
-    OwnedSplitComplex fft_Ry[NumAmbisonicsChannels][NumAmbisonicsChannels];
-    OwnedSplitComplex fft_Rz[NumAmbisonicsChannels][NumAmbisonicsChannels];
-    OwnedSplitComplex SplitComplexBuffer1;
-    OwnedSplitComplex SplitComplexBuffer2;
+    SpectrumBuffer fft_Rxyz[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    SpectrumBuffer fft_Rxyz_TEMP[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    SpectrumBuffer fft_Rx[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    SpectrumBuffer fft_Ry[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    SpectrumBuffer fft_Rz[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    SpectrumBuffer audioInputSpectrum;
+    SpectrumBuffer matrixProductSpectrum;
     FloatBuffer FFTconvBuffer1;
-    FFTSetup fftConvSetup = nullptr;
+    PortableRealFft audioFft { earlyref_Log2N };
+    PortableRealFft matrixFft { earlyref_Log2N };
     float fftScale = 0.0f;
 
     juce::SpinLock matrixLock;

@@ -341,30 +341,22 @@ void AmbVerbAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     fdn.processBlock(input[0], blockSize, getSampleRate());
 
     for (int channel = 0; channel < NumAmbisonicsChannels; ++channel) {
-        vDSP_vsmul(directSoundBuffer[channel]
-                       + earlyref_Buffersize - blockSize - directAndEarlyDelay + 100,
-                   1,
-                   &directGain,
-                   output[channel],
-                   1,
-                   blockSize);
-        vDSP_vsma(earlyReflectionBuffer[channel]
-                      + earlyref_Buffersize - blockSize - directAndEarlyDelay,
-                  1,
-                  &reverbGain,
-                  output[channel],
-                  1,
-                  output[channel],
-                  1,
-                  blockSize);
-        vDSP_vsma(fdn.Output[channel],
-                  1,
-                  &reverbGain,
-                  output[channel],
-                  1,
-                  output[channel],
-                  1,
-                  blockSize);
+        juce::FloatVectorOperations::copyWithMultiply(
+            output[channel],
+            directSoundBuffer[channel]
+                + earlyref_Buffersize - blockSize - directAndEarlyDelay + 100,
+            directGain,
+            blockSize);
+        juce::FloatVectorOperations::addWithMultiply(
+            output[channel],
+            earlyReflectionBuffer[channel]
+                + earlyref_Buffersize - blockSize - directAndEarlyDelay,
+            reverbGain,
+            blockSize);
+        juce::FloatVectorOperations::addWithMultiply(output[channel],
+                                                      fdn.Output[channel],
+                                                      reverbGain,
+                                                      blockSize);
     }
 
    #if defined(AMBVERB_STEREO_COMPATIBILITY)
