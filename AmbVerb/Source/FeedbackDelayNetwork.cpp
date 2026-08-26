@@ -275,6 +275,10 @@ void FDN::prepare(double sampleRate, int maximumBlockSize) {
     // 16-channel correction IR twice for every prepareToPlay() call.
     const juce::SpinLock::ScopedLockType lock(parameterLock);
     Samplerate = sampleRate;
+    preparedMaximumBlockSize = maximumBlockSize;
+    activeConvolutionBank.reset();
+    pendingConvolutionBank.reset();
+    unlockParamtersOnOff.store(false, std::memory_order_release);
 
     reset();
 }
@@ -300,6 +304,12 @@ void FDN::reset() {
 
     delayWritePosition = 0;
     earlyBufferReadPosition = 0;
+
+    if (activeConvolutionBank != nullptr)
+        activeConvolutionBank->reset();
+
+    if (pendingConvolutionBank != nullptr)
+        pendingConvolutionBank->reset();
 }
 
 void FDN::processBlock(const float *Block, int DspBlocksize) {
@@ -382,43 +392,62 @@ void FDN::processBlock(const float *Block, int DspBlocksize) {
 
     /*---- -- -- -- -- -- Signalspur des Direktschalls und der Ersreflexionen -- -- -- -- -- -- -- --*/
 
-    getWindowedOutput(DspBlocksize);
+    if (activeConvolutionBank != nullptr) {
+        const float* inputPointers[] { Block };
+        std::array<float*, NumDelaylines> correctionPointers {};
 
-    const auto firstPart = juce::jmin(static_cast<std::size_t>(DspBlocksize),
-                                      fdn_Buffersize - earlyBufferReadPosition);
+        for (int line = 0; line < NumDelaylines; ++line)
+            correctionPointers[static_cast<std::size_t>(line)] = TempBuffer[line];
 
-    for (int i = 0; i < NumAmbisonicsChannels; i++) { // Routing delay lines to outputs
-        // ...... Direktschall und Erstreflexionen subtrahieren ....... //
-        juce::FloatVectorOperations::addWithMultiply(Output[i],
-                                                      EarlyReflectionsBuffer[i % NumDelaylines]
-                                                          + earlyBufferReadPosition,
-                                                      -fdnVol,
-                                                      static_cast<int>(firstPart));
+        activeConvolutionBank->process(inputPointers,
+                                       correctionPointers.data(),
+                                       DspBlocksize);
 
-        if (firstPart < static_cast<std::size_t>(DspBlocksize)) {
+        for (int channel = 0; channel < NumAmbisonicsChannels; ++channel) {
             juce::FloatVectorOperations::addWithMultiply(
-                Output[i] + firstPart,
-                EarlyReflectionsBuffer[i % NumDelaylines],
+                Output[channel],
+                TempBuffer[channel % NumDelaylines],
                 -fdnVol,
-                DspBlocksize - static_cast<int>(firstPart));
+                DspBlocksize);
         }
-    }
+    } else {
+        getWindowedOutput(DspBlocksize);
 
-    for (int i = 0; i < NumDelaylines; ++i) {
-        juce::FloatVectorOperations::clear(EarlyReflectionsBuffer[i]
-                                               + earlyBufferReadPosition,
-                                           static_cast<int>(firstPart));
+        const auto firstPart = juce::jmin(static_cast<std::size_t>(DspBlocksize),
+                                          fdn_Buffersize - earlyBufferReadPosition);
 
-        if (firstPart < static_cast<std::size_t>(DspBlocksize)) {
-            juce::FloatVectorOperations::clear(
-                EarlyReflectionsBuffer[i],
-                DspBlocksize - static_cast<int>(firstPart));
+        for (int i = 0; i < NumAmbisonicsChannels; i++) {
+            juce::FloatVectorOperations::addWithMultiply(Output[i],
+                                                          EarlyReflectionsBuffer[i % NumDelaylines]
+                                                              + earlyBufferReadPosition,
+                                                          -fdnVol,
+                                                          static_cast<int>(firstPart));
+
+            if (firstPart < static_cast<std::size_t>(DspBlocksize)) {
+                juce::FloatVectorOperations::addWithMultiply(
+                    Output[i] + firstPart,
+                    EarlyReflectionsBuffer[i % NumDelaylines],
+                    -fdnVol,
+                    DspBlocksize - static_cast<int>(firstPart));
+            }
         }
-    }
 
-    earlyBufferReadPosition = (earlyBufferReadPosition
-                               + static_cast<std::size_t>(DspBlocksize))
-        & (fdn_Buffersize - 1);
+        for (int i = 0; i < NumDelaylines; ++i) {
+            juce::FloatVectorOperations::clear(EarlyReflectionsBuffer[i]
+                                                   + earlyBufferReadPosition,
+                                               static_cast<int>(firstPart));
+
+            if (firstPart < static_cast<std::size_t>(DspBlocksize)) {
+                juce::FloatVectorOperations::clear(
+                    EarlyReflectionsBuffer[i],
+                    DspBlocksize - static_cast<int>(firstPart));
+            }
+        }
+
+        earlyBufferReadPosition = (earlyBufferReadPosition
+                                   + static_cast<std::size_t>(DspBlocksize))
+            & (fdn_Buffersize - 1);
+    }
 }
 
 void FDN::FeedbackMatrix_Multiplikation(float *inSignal, float *rightEnd[], float *delayPoint[], const int FB_Blocksize) {
@@ -530,6 +559,32 @@ void FDN:: windowIR() {
                                                fdn_Buffersize);
         parameterFft.forwardVdspCompatible(IR_TempBuffer1, fft_IR_temp[i]);
     }
+
+    buildPendingConvolutionBank();
+}
+
+void FDN::buildPendingConvolutionBank() {
+    if (Samplerate <= 0.0 || preparedMaximumBlockSize <= 0)
+        return;
+
+    auto bank = std::make_unique<PartitionedConvolutionBank>(Samplerate,
+                                                              preparedMaximumBlockSize,
+                                                              1,
+                                                              NumDelaylines);
+
+    for (int line = 0; line < NumDelaylines; ++line) {
+        juce::FloatVectorOperations::multiply(IR_TempBuffer1,
+                                               Window,
+                                               IR[line],
+                                               fdn_Buffersize);
+        bank->addRoute(0,
+                       line,
+                       IR_TempBuffer1,
+                       fdn_Buffersize);
+    }
+
+    bank->prepare();
+    pendingConvolutionBank = std::move(bank);
 }
 
 void FDN:: setWindowBoundries(int start, int end) {
@@ -594,6 +649,9 @@ void FDN::unlockParameters() {
     for (int i = 0; i < NumDelaylines; i++) {
         fft_IR[i].swapWith(fft_IR_temp[i]);
     }
+
+    if (pendingConvolutionBank != nullptr)
+        activeConvolutionBank.swap(pendingConvolutionBank);
 }
 
 void FDN::setDelayTimesUnchecked(float min, float max) {

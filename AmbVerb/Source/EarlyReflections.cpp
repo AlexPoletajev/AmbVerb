@@ -13,6 +13,7 @@
 #include <cstring>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 #include "EarlyReflections.hpp"
 
 namespace
@@ -72,7 +73,6 @@ EarlyRef::EarlyRef() {
         Filter_InitialSample[i] = 0;
     }
 
-    //.....fft
     FFTconvBuffer1.allocate(earlyref_Buffersize);
 
     if (FFTconvBuffer1 == nullptr) {
@@ -163,6 +163,21 @@ EarlyRef::EarlyRef() {
     Q = 400.0;
 }
 
+void EarlyRef::prepare(double sampleRate, int maximumBlockSize) {
+    if (sampleRate <= 0.0
+        || maximumBlockSize <= 0
+        || static_cast<std::size_t>(maximumBlockSize) > earlyref_Buffersize)
+        throw std::invalid_argument("Unsupported early-reflection configuration");
+
+    const juce::SpinLock::ScopedLockType lock(matrixLock);
+    preparedSampleRate = sampleRate;
+    preparedMaximumBlockSize = maximumBlockSize;
+    activeConvolutionBank.reset();
+    pendingConvolutionBank.reset();
+    matrixReady.store(false, std::memory_order_release);
+    reset();
+}
+
 void EarlyRef::reset() {
     for (int i = 0; i < NumAmbisonicsChannels; ++i) {
         InBuffer[i].clear();
@@ -174,6 +189,12 @@ void EarlyRef::reset() {
     FFTconvBuffer1.clear();
     FilterBuffer.clear();
     outBufferReadPosition = 0;
+
+    if (activeConvolutionBank != nullptr)
+        activeConvolutionBank->reset();
+
+    if (pendingConvolutionBank != nullptr)
+        pendingConvolutionBank->reset();
 }
 
 void EarlyRef::processBlock(const float *const Block[], int DspBlocksize) {
@@ -184,26 +205,39 @@ void EarlyRef::processBlock(const float *const Block[], int DspBlocksize) {
 
     UnlockRotationMatrixForCalculaion();
 
-    for (int i = 0; i < NumAmbisonicsChannels; i++) {
-        juce::FloatVectorOperations::clear(InBuffer[i], earlyref_Buffersize);
-        memcpy(InBuffer[i], Block[i], DspBlocksize * sizeof(float));
-    }
+    if (activeConvolutionBank != nullptr) {
+        std::array<float*, NumAmbisonicsChannels> outputPointers {};
 
-    MatrixConvolution();
+        for (int channel = 0; channel < NumAmbisonicsChannels; ++channel)
+            outputPointers[static_cast<std::size_t>(channel)] = Output[channel];
+
+        activeConvolutionBank->process(Block,
+                                       outputPointers.data(),
+                                       DspBlocksize);
+    } else {
+        for (int i = 0; i < NumAmbisonicsChannels; i++) {
+            juce::FloatVectorOperations::clear(InBuffer[i], earlyref_Buffersize);
+            memcpy(InBuffer[i], Block[i], DspBlocksize * sizeof(float));
+        }
+
+        MatrixConvolution();
+    }
 
     for (int i = 0; i < NumAmbisonicsChannels; i++) {
         // - - - - - Ausgabe - - - - - -
         const auto firstPart = juce::jmin(
             static_cast<std::size_t>(DspBlocksize),
             earlyref_Buffersize - outBufferReadPosition);
-        memcpy(Output[i],
-               OutBuffer[i] + outBufferReadPosition,
-               firstPart * sizeof(float)); //Verzögerung der Erstreflexionen
+        if (activeConvolutionBank == nullptr) {
+            memcpy(Output[i],
+                   OutBuffer[i] + outBufferReadPosition,
+                   firstPart * sizeof(float)); //Verzögerung der Erstreflexionen
 
-        if (firstPart < static_cast<std::size_t>(DspBlocksize)) {
-            memcpy(Output[i] + firstPart,
-                   OutBuffer[i],
-                   (static_cast<std::size_t>(DspBlocksize) - firstPart) * sizeof(float));
+            if (firstPart < static_cast<std::size_t>(DspBlocksize)) {
+                memcpy(Output[i] + firstPart,
+                       OutBuffer[i],
+                       (static_cast<std::size_t>(DspBlocksize) - firstPart) * sizeof(float));
+            }
         }
 
         //memcpy(Output[i], OutBuffer[i]+ (int) (EarlyrefDelayTime * Q/100.0), DspBlocksize * sizeof(float)); //Verzögerung der Erstreflexionen
@@ -218,13 +252,15 @@ void EarlyRef::processBlock(const float *const Block[], int DspBlocksize) {
         juce::FloatVectorOperations::multiply(Output[i], earlyrefVolume, DspBlocksize);
 
         // - - - - - Vorbereitung für den nächsten Block - - - - -
-        juce::FloatVectorOperations::clear(OutBuffer[i] + outBufferReadPosition,
-                                            static_cast<int>(firstPart));
+        if (activeConvolutionBank == nullptr) {
+            juce::FloatVectorOperations::clear(OutBuffer[i] + outBufferReadPosition,
+                                                static_cast<int>(firstPart));
 
-        if (firstPart < static_cast<std::size_t>(DspBlocksize)) {
-            juce::FloatVectorOperations::clear(
-                OutBuffer[i],
-                DspBlocksize - static_cast<int>(firstPart));
+            if (firstPart < static_cast<std::size_t>(DspBlocksize)) {
+                juce::FloatVectorOperations::clear(
+                    OutBuffer[i],
+                    DspBlocksize - static_cast<int>(firstPart));
+            }
         }
     }
 
@@ -544,6 +580,14 @@ void EarlyRef:: CalculateRxyz() {
     }
 
     OnsetLength = static_cast<int>(Q_TEMP * (1.0f + Qx + Qy) * Trunc);
+    const auto nominalOnsetOffset = static_cast<std::size_t>(
+        juce::jmax(0, OnsetLength - 10));
+
+    // The old vDSP path read this data as DSPComplex pairs. Preserve its
+    // observed odd-sample crop phase, retaining the preceding sample whenever
+    // the nominal offset is even.
+    const auto onsetOffset = nominalOnsetOffset
+        - static_cast<std::size_t>((nominalOnsetOffset & 1U) == 0U);
 
     for (int a = 0; a < NumAmbisonicsChannels; ++a) {
         for (int b = 0; b < NumAmbisonicsChannels; ++b) {
@@ -552,14 +596,6 @@ void EarlyRef:: CalculateRxyz() {
                                                    fftScale * 8.0f,
                                                    earlyref_Buffersize);
 
-            const auto nominalOnsetOffset = static_cast<std::size_t>(
-                juce::jmax(0, OnsetLength - 10));
-
-            // The old vDSP path read this data as DSPComplex pairs. Preserve
-            // its observed odd-sample crop phase, retaining the preceding
-            // sample whenever the nominal offset is even.
-            const auto onsetOffset = nominalOnsetOffset
-                - static_cast<std::size_t>((nominalOnsetOffset & 1U) == 0U);
             jassert(onsetOffset + earlyref_Buffersize <= Rxyz[a][b].size());
             matrixFft.forwardVdspCompatible(Rxyz[a][b] + onsetOffset, fft_Rz[a][b]);
         }
@@ -570,6 +606,35 @@ void EarlyRef:: CalculateRxyz() {
             PortableRealFft::copy(fft_Rz[a][b], fft_Rxyz_TEMP[a][b]);
 
     CheckforNonZeroEntriesXYZ();
+    buildPendingConvolutionBank(onsetOffset);
+}
+
+void EarlyRef::buildPendingConvolutionBank(std::size_t onsetOffset) {
+    if (preparedSampleRate <= 0.0 || preparedMaximumBlockSize <= 0)
+        return;
+
+    auto bank = std::make_unique<PartitionedConvolutionBank>(
+        preparedSampleRate,
+        preparedMaximumBlockSize,
+        NumAmbisonicsChannels,
+        NumAmbisonicsChannels);
+
+    for (int output = 0; output < NumAmbisonicsChannels; ++output) {
+        for (int input = 0; input < NumAmbisonicsChannels; ++input) {
+            if (NonZeroEntriesXYZ_TEMP[output][input] == 1) {
+                // Rxyz contains twice the ordinary time-domain impulse. The
+                // old runtime FFT path contributes another factor of 1/8.
+                bank->addRoute(input,
+                               output,
+                               Rxyz[output][input] + onsetOffset,
+                               earlyref_Buffersize,
+                               0.125f);
+            }
+        }
+    }
+
+    bank->prepare();
+    pendingConvolutionBank = std::move(bank);
 }
 
 void EarlyRef::CheckforNonZeroEntriesX() {
@@ -695,6 +760,9 @@ void EarlyRef::  UnlockRotationMatrixForCalculaion() {
             NonZeroEntriesXYZ[a][b] = NonZeroEntriesXYZ_TEMP[a][b];
         }
     }
+
+    if (pendingConvolutionBank != nullptr)
+        activeConvolutionBank.swap(pendingConvolutionBank);
 
     Q = Q_TEMP;
     matrixReady.store(false, std::memory_order_release);

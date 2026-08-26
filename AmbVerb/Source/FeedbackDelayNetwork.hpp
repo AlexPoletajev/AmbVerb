@@ -4,9 +4,11 @@
 
 #include <atomic>
 #include <cmath>
+#include <memory>
 
 #include "BufferStorage.hpp"
 #include "CompilationFlags.h"
+#include "PartitionedConvolution.hpp"
 #include "PortableDsp.hpp"
 
 inline const float maxGain = 0.999999f / std::sqrt(static_cast<float>(NumDelaylines));
@@ -62,6 +64,7 @@ private:
     void setFilterCoefficients();
     void unlockParameters();
     void refreshWindow();
+    void buildPendingConvolutionBank();
     void setDelayTimesUnchecked(float min, float max);
 
     FloatBuffer inBuffer;
@@ -102,6 +105,9 @@ private:
     int tMixEnd = 0;
     std::size_t delayWritePosition = 0;
     std::size_t earlyBufferReadPosition = 0;
+    int preparedMaximumBlockSize = 0;
+    std::unique_ptr<PartitionedConvolutionBank> activeConvolutionBank;
+    std::unique_ptr<PartitionedConvolutionBank> pendingConvolutionBank;
 
     std::atomic<bool> unlockParamtersOnOff { false };
     juce::SpinLock parameterLock;

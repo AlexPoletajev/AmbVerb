@@ -3,10 +3,12 @@
 #include <juce_core/juce_core.h>
 
 #include <atomic>
+#include <memory>
 #include <string_view>
 
 #include "BufferStorage.hpp"
 #include "CompilationFlags.h"
+#include "PartitionedConvolution.hpp"
 #include "PortableDsp.hpp"
 
 class EarlyRef
@@ -15,6 +17,7 @@ public:
     EarlyRef();
     ~EarlyRef() = default;
 
+    void prepare(double sampleRate, int maximumBlockSize);
     void processBlock(const float* const block[], int dspBlockSize);
     void reset();
 
@@ -54,6 +57,7 @@ private:
     void CheckforNonZeroEntriesY();
     void CheckforNonZeroEntriesZ();
     void CheckforNonZeroEntriesXYZ();
+    void buildPendingConvolutionBank(std::size_t onsetOffset);
     void MatrixConvolution();
     float LowPass(float* input,
                   double gain,
@@ -102,6 +106,10 @@ private:
     PortableRealFft matrixFft { earlyref_Log2N };
     float fftScale = 0.0f;
     std::size_t outBufferReadPosition = 0;
+    double preparedSampleRate = 0.0;
+    int preparedMaximumBlockSize = 0;
+    std::unique_ptr<PartitionedConvolutionBank> activeConvolutionBank;
+    std::unique_ptr<PartitionedConvolutionBank> pendingConvolutionBank;
 
     juce::SpinLock matrixLock;
     std::atomic<bool> matrixReady { false };

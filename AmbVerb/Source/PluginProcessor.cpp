@@ -264,7 +264,7 @@ void AmbVerbAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
                                       false);
    #endif
 
-    earlyref.reset();
+    earlyref.prepare(sampleRate, samplesPerBlock);
     fdn.prepare(sampleRate, samplesPerBlock);
 
     for (int channel = 0; channel < NumAmbisonicsChannels; ++channel) {
