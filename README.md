@@ -72,7 +72,24 @@ The files are 16-channel, 32-bit floating-point WAVs. The regular CTest run
 compares every output sample with absolute and relative tolerances and saves
 mismatching renders below `Build/AudioRegression/current` for inspection.
 
+## DSP benchmark
+
+`AmbVerbDspBenchmark` measures construction and preparation time plus the mean,
+p50, p95, p99 and maximum callback time for host block sizes from 64 through
+1024 samples. It also reports callback time as a fraction of the available
+real-time budget. Run the Release benchmark with:
+
+```sh
+cmake --build Build --config Release --target AmbVerbRunDspBenchmark
+```
+
+The machine-readable result is written below `Build/DspBenchmark/`. Performance
+results are retained as CI artifacts but are not used as hard pass/fail limits,
+because shared runners and platform FFT backends have different timing noise.
+
 ## Next DSP work
 
-Replace the shifting delay buffers with ring buffers and reduce repeated FFT
-work while keeping the same regression suite in place.
+Replace the remaining fixed 16,384-sample runtime transforms with block-adaptive
+partitioned convolution. The runtime delay paths already use ring buffers, the
+early-reflection matrix shares input/output transforms, and the FDN feedback
+uses a fast Walsh-Hadamard transform.

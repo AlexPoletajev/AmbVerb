@@ -23,11 +23,23 @@ jobs:
       - name: Run tests
         run: ctest --test-dir Build -C Release --output-on-failure
 
+      - name: Run DSP benchmark
+        run: cmake --build Build --config Release --target AmbVerbRunDspBenchmark
+
       - name: Upload audio regression artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ambverb-audio-regression-${{ github.sha }}
           path: Build/AudioRegression/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload DSP benchmark
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ambverb-dsp-benchmark-${{ github.sha }}
+          path: Build/DspBenchmark/
           if-no-files-found: warn
           retention-days: 30

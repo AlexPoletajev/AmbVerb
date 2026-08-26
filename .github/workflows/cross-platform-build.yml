@@ -46,11 +46,28 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a ctest --test-dir Build -C Release --output-on-failure
 
+      - name: Run DSP benchmark on Windows
+        if: runner.os == 'Windows'
+        run: cmake --build Build --config Release --target AmbVerbRunDspBenchmark
+
+      - name: Run DSP benchmark on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a cmake --build Build --config Release --target AmbVerbRunDspBenchmark
+
       - name: Upload audio comparison artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ambverb-audio-regression-${{ runner.os }}-${{ github.sha }}
           path: Build/AudioRegression/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload DSP benchmark
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ambverb-dsp-benchmark-${{ runner.os }}-${{ github.sha }}
+          path: Build/DspBenchmark/
           if-no-files-found: warn
           retention-days: 30

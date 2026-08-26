@@ -175,6 +175,51 @@ if (BUILD_TESTING)
             juce::juce_recommended_warning_flags
     )
 
+    juce_add_console_app(AmbVerbDspBenchmark
+        PRODUCT_NAME "AmbVerb DSP Benchmark"
+    )
+
+    juce_generate_juce_header(AmbVerbDspBenchmark)
+
+    target_sources(AmbVerbDspBenchmark
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/Tests/DspBenchmarkMain.cpp"
+    )
+
+    target_include_directories(AmbVerbDspBenchmark
+        PRIVATE
+            "${AMBVERB_SOURCE_DIR}"
+    )
+
+    target_compile_features(AmbVerbDspBenchmark PRIVATE cxx_std_17)
+
+    target_compile_definitions(AmbVerbDspBenchmark
+        PRIVATE
+            JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=0
+    )
+
+    target_link_libraries(AmbVerbDspBenchmark
+        PRIVATE
+            AmbVerb
+            AmbVerbData
+            juce::juce_audio_utils
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags
+    )
+
+    set(AMBVERB_BENCHMARK_ARTIFACT_DIR
+        "${CMAKE_CURRENT_BINARY_DIR}/DspBenchmark")
+
+    add_custom_target(AmbVerbRunDspBenchmark
+        COMMAND "$<TARGET_FILE:AmbVerbDspBenchmark>"
+            --json "${AMBVERB_BENCHMARK_ARTIFACT_DIR}/benchmark-$<CONFIG>.json"
+        DEPENDS AmbVerbDspBenchmark
+        USES_TERMINAL
+        COMMENT "Running AmbVerb DSP benchmark"
+    )
+
     set(AMBVERB_AUDIO_REFERENCE_DIR
         "${CMAKE_CURRENT_SOURCE_DIR}/Tests/ReferenceAudio")
     set(AMBVERB_AUDIO_ARTIFACT_DIR
