@@ -1,5 +1,10 @@
 # build folder
 AmbVerb/Builds/
+Build/
+cmake-build-*/
+out/
+Tests/CurrentAudio/
+Tests/AudioArtifacts/
 
 # Prerequisites
 *.d

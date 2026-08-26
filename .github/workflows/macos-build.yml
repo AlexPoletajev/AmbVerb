@@ -1,0 +1,33 @@
+name: macOS build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B Build -G Xcode -DBUILD_TESTING=ON
+
+      - name: Build plug-ins
+        run: >-
+          cmake --build Build --config Release --parallel 3
+          --target AmbVerb_Standalone AmbVerb_VST3 AmbVerb_AU AmbVerbAudioRegression
+
+      - name: Run tests
+        run: ctest --test-dir Build -C Release --output-on-failure
+
+      - name: Upload audio regression artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ambverb-audio-regression-${{ github.sha }}
+          path: Build/AudioRegression/
+          if-no-files-found: warn
+          retention-days: 30
