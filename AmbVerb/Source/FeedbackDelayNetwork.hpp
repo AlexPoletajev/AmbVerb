@@ -19,7 +19,7 @@ public:
 
     void prepare(double sampleRate, int maximumBlockSize);
     void reset();
-    void processBlock(const float* block, int dspBlockSize, double sampleRate);
+    void processBlock(const float* block, int dspBlockSize);
 
     void setParameters(float minDelay,
                        float maxDelay,
@@ -100,6 +100,8 @@ private:
     int CustomBlocksize = 0;
     int tMixStart = 0;
     int tMixEnd = 0;
+    std::size_t delayWritePosition = 0;
+    std::size_t earlyBufferReadPosition = 0;
 
     std::atomic<bool> unlockParamtersOnOff { false };
     juce::SpinLock parameterLock;

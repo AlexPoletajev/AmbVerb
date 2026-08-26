@@ -9,11 +9,35 @@
 #include "FeedbackDelayNetwork.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <iterator>
 #include <stdexcept>
 
+namespace
+{
+void hadamardTransform(std::array<float, NumDelaylines>& values) noexcept
+{
+    static_assert((NumDelaylines & (NumDelaylines - 1)) == 0,
+                  "The fast Hadamard transform requires a power-of-two delay count");
+
+    for (std::size_t halfLength = 1;
+         halfLength < static_cast<std::size_t>(NumDelaylines);
+         halfLength *= 2) {
+        for (std::size_t base = 0;
+             base < static_cast<std::size_t>(NumDelaylines);
+             base += 2 * halfLength) {
+            for (std::size_t offset = 0; offset < halfLength; ++offset) {
+                const float left = values[base + offset];
+                const float right = values[base + offset + halfLength];
+                values[base + offset] = left + right;
+                values[base + offset + halfLength] = left - right;
+            }
+        }
+    }
+}
+}
 
 FDN::FDN() {
 
@@ -246,15 +270,11 @@ void FDN::prepare(double sampleRate, int maximumBlockSize) {
         || static_cast<std::size_t>(maximumBlockSize) > fdn_Buffersize)
         throw std::invalid_argument("Unsupported FDN sample rate or maximum block size");
 
-    {
-        const juce::SpinLock::ScopedLockType lock(parameterLock);
-        Samplerate = sampleRate;
-        setDelayTimesUnchecked(static_cast<float>(minDelaytime),
-                               static_cast<float>(maxDelaytime));
-        refreshWindow();
-        unlockParameters();
-        unlockParamtersOnOff.store(false, std::memory_order_release);
-    }
+    // The processor applies its complete parameter snapshot immediately after
+    // prepare(). Rebuilding the window here as well used to generate the same
+    // 16-channel correction IR twice for every prepareToPlay() call.
+    const juce::SpinLock::ScopedLockType lock(parameterLock);
+    Samplerate = sampleRate;
 
     reset();
 }
@@ -277,9 +297,12 @@ void FDN::reset() {
 
     for (auto& output : Output)
         output.clear();
+
+    delayWritePosition = 0;
+    earlyBufferReadPosition = 0;
 }
 
-void FDN::processBlock(const float *Block, int DspBlocksize, double pB_Samplerate) {
+void FDN::processBlock(const float *Block, int DspBlocksize) {
     if (DspBlocksize <= 0 || static_cast<std::size_t>(DspBlocksize) > fdn_Buffersize) {
         jassertfalse;
         return;
@@ -294,10 +317,8 @@ void FDN::processBlock(const float *Block, int DspBlocksize, double pB_Samplerat
         }
     }
 
-    int i, u, NumCycles;
+    int NumCycles;
     int CustomBlocksize_temp;
-
-    jassert(std::abs(Samplerate - pB_Samplerate) < 0.5);
 
     // - - - - - Eigene Blocksize wählen, falls nötig - - - - - //
     if (DspBlocksize >= DelayTimes[0]) {
@@ -321,84 +342,98 @@ void FDN::processBlock(const float *Block, int DspBlocksize, double pB_Samplerat
             CustomBlocksize = DspBlocksize - (CustomBlocksize * (NumCycles - 1));
         }
 
-        // - - - - - Variables für BufferOrganisation and Handling - - - - - //
+        const int outputOffset = Cycle * CustomBlocksize_temp;
+        std::array<float, NumDelaylines> feedbackOutput {};
 
-        for (i = 0; i < NumDelaylines; i++) {
-            Delayline_rightEnd[i] = Delayline_leftEnd[i] + fdn_Buffersize - CustomBlocksize;   // Pointer to Beginning of Delay Line
-        }
+        for (int sample = 0; sample < CustomBlocksize; ++sample) {
+            const auto writePosition = (delayWritePosition + static_cast<std::size_t>(sample))
+                & (fdn_Buffersize - 1);
 
-        for (i = 0; i < NumDelaylines; i++) {
-            Delayline_delayPoint[i] = Delayline_rightEnd[i] - DelayTimes[i];  // Pointer to Sample inside Delay Line, (PrimNumber) ca. 50ms
-        }
-
-        // - - - - - Buffer um einen Block weiterschieben - - - - - //
-        for (i = 0; i < NumDelaylines; i++) {
-            memmove(Delayline_leftEnd[i], Delayline_leftEnd[i] + CustomBlocksize, (fdn_Buffersize - CustomBlocksize) * sizeof(float)); //Pushing the first N-1 Blocks one step further
-            memset(Delayline_rightEnd[i], 0.0, CustomBlocksize * sizeof(float));
-        }
-
-        // - - - - - Feedback - - - - - //
-        FeedbackMatrix_Multiplikation(inBuffer + (Cycle * CustomBlocksize_temp), Delayline_rightEnd, Delayline_delayPoint, CustomBlocksize); // Apply Feeedback
-
-        // - - - - - Tiefpassfilterung - - - - - //
-        for (i = 0; i < NumDelaylines; i++) {
-            Filter_initialSample[i] = LowPass(Delayline_rightEnd[i], a0[i], p[i], Filter_initialSample[i], FilterBuffer, CustomBlocksize);
-            memcpy(Delayline_rightEnd[i], FilterBuffer, CustomBlocksize * sizeof(float));
-        }
-
-        // ...... Output
-        u = 0;
-
-        for (i = 0; i < NumAmbisonicsChannels; i++) {
-            if ((i % NumDelaylines) == 0 && i != 0) { // Falls mehr Outputs existieren als Delaylines werden die Delaylines mehrfach verteilt
-                u = u + NumDelaylines;
+            for (int inputLine = 0; inputLine < NumDelaylines; ++inputLine) {
+                const auto delayPosition = (writePosition + fdn_Buffersize
+                                            - static_cast<std::size_t>(DelayTimes[inputLine]))
+                    & (fdn_Buffersize - 1);
+                feedbackOutput[static_cast<std::size_t>(inputLine)]
+                    = Delayline_leftEnd[inputLine][delayPosition];
             }
 
-            juce::FloatVectorOperations::copyWithMultiply(
-                Output[i] + (Cycle * CustomBlocksize_temp),
-                Delayline_rightEnd[i - u],
-                fdnVol,
-                CustomBlocksize);
+            hadamardTransform(feedbackOutput);
+
+            for (auto& value : feedbackOutput)
+                value = value * maxGain + Block[outputOffset + sample];
+
+            for (int outputLine = 0; outputLine < NumDelaylines; ++outputLine) {
+                const auto filtered = static_cast<float>(
+                    feedbackOutput[static_cast<std::size_t>(outputLine)] * a0[outputLine]
+                    + Filter_initialSample[outputLine] * p[outputLine]);
+                Filter_initialSample[outputLine] = filtered;
+                Delayline_leftEnd[outputLine][writePosition] = filtered;
+            }
+
+            for (int channel = 0; channel < NumAmbisonicsChannels; ++channel) {
+                Output[channel][static_cast<std::size_t>(outputOffset + sample)]
+                    = Delayline_leftEnd[channel % NumDelaylines][writePosition] * fdnVol;
+            }
         }
+
+        delayWritePosition = (delayWritePosition + static_cast<std::size_t>(CustomBlocksize))
+            & (fdn_Buffersize - 1);
     }
 
     /*---- -- -- -- -- -- Signalspur des Direktschalls und der Ersreflexionen -- -- -- -- -- -- -- --*/
 
-    for (i = 0; i < NumDelaylines; i++) {
-        memmove(EarlyReflectionsBuffer[i], EarlyReflectionsBuffer[i] + DspBlocksize, (fdn_Buffersize - DspBlocksize) * sizeof(float)); //Pushing the first N-1 Blocks one step further
-    }
-
-    for (i = 0; i < NumDelaylines; i++) { //Set first block to 0
-        memset(EarlyReflectionsBuffer[i] + (fdn_Buffersize - DspBlocksize), 0.0, DspBlocksize * sizeof(float));
-    }
-
     getWindowedOutput(DspBlocksize);
-    u = 0;
 
-    for (i = 0; i < NumAmbisonicsChannels; i++) { // Routing delay lines to outputs
-        if ((i % NumDelaylines) == 0 && i != 0) {
-            u = u + NumDelaylines;
-        }
+    const auto firstPart = juce::jmin(static_cast<std::size_t>(DspBlocksize),
+                                      fdn_Buffersize - earlyBufferReadPosition);
 
+    for (int i = 0; i < NumAmbisonicsChannels; i++) { // Routing delay lines to outputs
         // ...... Direktschall und Erstreflexionen subtrahieren ....... //
-
         juce::FloatVectorOperations::addWithMultiply(Output[i],
-                                                      EarlyReflectionsBuffer[i - u],
+                                                      EarlyReflectionsBuffer[i % NumDelaylines]
+                                                          + earlyBufferReadPosition,
                                                       -fdnVol,
-                                                      DspBlocksize);
+                                                      static_cast<int>(firstPart));
+
+        if (firstPart < static_cast<std::size_t>(DspBlocksize)) {
+            juce::FloatVectorOperations::addWithMultiply(
+                Output[i] + firstPart,
+                EarlyReflectionsBuffer[i % NumDelaylines],
+                -fdnVol,
+                DspBlocksize - static_cast<int>(firstPart));
+        }
     }
+
+    for (int i = 0; i < NumDelaylines; ++i) {
+        juce::FloatVectorOperations::clear(EarlyReflectionsBuffer[i]
+                                               + earlyBufferReadPosition,
+                                           static_cast<int>(firstPart));
+
+        if (firstPart < static_cast<std::size_t>(DspBlocksize)) {
+            juce::FloatVectorOperations::clear(
+                EarlyReflectionsBuffer[i],
+                DspBlocksize - static_cast<int>(firstPart));
+        }
+    }
+
+    earlyBufferReadPosition = (earlyBufferReadPosition
+                               + static_cast<std::size_t>(DspBlocksize))
+        & (fdn_Buffersize - 1);
 }
 
 void FDN::FeedbackMatrix_Multiplikation(float *inSignal, float *rightEnd[], float *delayPoint[], const int FB_Blocksize) {
-    int i, u, o;
+    std::array<float, NumDelaylines> values {};
 
-    for (i = 0; i < FB_Blocksize; i++) {
-        for (o = 0; o < NumDelaylines; o++) {
-            for (u = 0; u < NumDelaylines; u++) {
-                *(rightEnd[o] + i) += FeedbackMarix[o][u] * maxGain * *(delayPoint[u] + i);
-            }
+    for (int sample = 0; sample < FB_Blocksize; ++sample) {
+        for (int inputLine = 0; inputLine < NumDelaylines; ++inputLine)
+            values[static_cast<std::size_t>(inputLine)] = delayPoint[inputLine][sample];
 
-            *(rightEnd[o] + i) += *(inSignal + i);
+        hadamardTransform(values);
+
+        for (int outputLine = 0; outputLine < NumDelaylines; ++outputLine) {
+            rightEnd[outputLine][sample]
+                += values[static_cast<std::size_t>(outputLine)] * maxGain
+                + inSignal[sample];
         }
     }
 }
@@ -518,10 +553,20 @@ void FDN::getWindowedOutput(const int aW_Blocksize) {
     for (int i = 0; i < NumDelaylines; i++) {
         PortableRealFft::multiply(fft_IR[i], fft_Input, fft_Delaylines[i]);
         runtimeFft.inverseVdspCompatible(fft_Delaylines[i], TempBuffer[i]);
-        juce::FloatVectorOperations::addWithMultiply(EarlyReflectionsBuffer[i],
-                                                      TempBuffer[i],
-                                                      fftScale,
-                                                      fdn_Buffersize);
+        const auto firstPart = fdn_Buffersize - earlyBufferReadPosition;
+        juce::FloatVectorOperations::addWithMultiply(
+            EarlyReflectionsBuffer[i] + earlyBufferReadPosition,
+            TempBuffer[i],
+            fftScale,
+            static_cast<int>(firstPart));
+
+        if (firstPart < fdn_Buffersize) {
+            juce::FloatVectorOperations::addWithMultiply(
+                EarlyReflectionsBuffer[i],
+                TempBuffer[i] + firstPart,
+                fftScale,
+                static_cast<int>(fdn_Buffersize - firstPart));
+        }
     }
 }
 

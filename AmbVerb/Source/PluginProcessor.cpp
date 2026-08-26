@@ -16,6 +16,66 @@ std::string_view resourceView(const char* data, int size)
 {
     return { data, static_cast<std::size_t>(size) };
 }
+
+void writeRing(FloatBuffer& destination,
+               std::size_t position,
+               const float* source,
+               int numSamples)
+{
+    const auto firstPart = juce::jmin(static_cast<std::size_t>(numSamples),
+                                      destination.size() - position);
+    memcpy(destination + position, source, firstPart * sizeof(float));
+
+    if (firstPart < static_cast<std::size_t>(numSamples)) {
+        memcpy(destination,
+               source + firstPart,
+               (static_cast<std::size_t>(numSamples) - firstPart) * sizeof(float));
+    }
+}
+
+void copyRingWithMultiply(float* destination,
+                          const FloatBuffer& source,
+                          std::size_t position,
+                          float gain,
+                          int numSamples)
+{
+    const auto firstPart = juce::jmin(static_cast<std::size_t>(numSamples),
+                                      source.size() - position);
+    juce::FloatVectorOperations::copyWithMultiply(destination,
+                                                   source + position,
+                                                   gain,
+                                                   static_cast<int>(firstPart));
+
+    if (firstPart < static_cast<std::size_t>(numSamples)) {
+        juce::FloatVectorOperations::copyWithMultiply(
+            destination + firstPart,
+            source,
+            gain,
+            numSamples - static_cast<int>(firstPart));
+    }
+}
+
+void addRingWithMultiply(float* destination,
+                         const FloatBuffer& source,
+                         std::size_t position,
+                         float gain,
+                         int numSamples)
+{
+    const auto firstPart = juce::jmin(static_cast<std::size_t>(numSamples),
+                                      source.size() - position);
+    juce::FloatVectorOperations::addWithMultiply(destination,
+                                                  source + position,
+                                                  gain,
+                                                  static_cast<int>(firstPart));
+
+    if (firstPart < static_cast<std::size_t>(numSamples)) {
+        juce::FloatVectorOperations::addWithMultiply(
+            destination + firstPart,
+            source,
+            gain,
+            numSamples - static_cast<int>(firstPart));
+    }
+}
 }
 
 AmbVerbAudioProcessor::AmbVerbAudioProcessor()
@@ -212,6 +272,8 @@ void AmbVerbAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
         earlyReflectionBuffer[channel].clear();
     }
 
+    delayWritePosition = 0;
+
     rebuildDspConfiguration(true);
 }
 
@@ -320,44 +382,45 @@ void AmbVerbAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     const float directGain = distanceToGain(distanceParameter->load(std::memory_order_relaxed));
     const float reverbGain = parameterToGain(reverbVolumeParameter->load(std::memory_order_relaxed));
 
-    earlyref.processBlock(input, blockSize, getSampleRate());
+    earlyref.processBlock(input, blockSize);
 
     for (int channel = 0; channel < NumAmbisonicsChannels; ++channel) {
-        memmove(earlyReflectionBuffer[channel],
-                earlyReflectionBuffer[channel] + blockSize,
-                (earlyref_Buffersize - static_cast<std::size_t>(blockSize)) * sizeof(float));
-        memcpy(earlyReflectionBuffer[channel] + earlyref_Buffersize - blockSize,
-               earlyref.Output[channel],
-               static_cast<std::size_t>(blockSize) * sizeof(float));
-
-        memmove(directSoundBuffer[channel],
-                directSoundBuffer[channel] + blockSize,
-                (earlyref_Buffersize - static_cast<std::size_t>(blockSize)) * sizeof(float));
-        memcpy(directSoundBuffer[channel] + earlyref_Buffersize - blockSize,
-               input[channel],
-               static_cast<std::size_t>(blockSize) * sizeof(float));
+        writeRing(earlyReflectionBuffer[channel],
+                  delayWritePosition,
+                  earlyref.Output[channel],
+                  blockSize);
+        writeRing(directSoundBuffer[channel],
+                  delayWritePosition,
+                  input[channel],
+                  blockSize);
     }
 
-    fdn.processBlock(input[0], blockSize, getSampleRate());
+    fdn.processBlock(input[0], blockSize);
+
+    const auto earlyReadPosition = (delayWritePosition + earlyref_Buffersize
+                                    - static_cast<std::size_t>(directAndEarlyDelay))
+        % earlyref_Buffersize;
+    const auto directReadPosition = (earlyReadPosition + 100) % earlyref_Buffersize;
 
     for (int channel = 0; channel < NumAmbisonicsChannels; ++channel) {
-        juce::FloatVectorOperations::copyWithMultiply(
-            output[channel],
-            directSoundBuffer[channel]
-                + earlyref_Buffersize - blockSize - directAndEarlyDelay + 100,
-            directGain,
-            blockSize);
-        juce::FloatVectorOperations::addWithMultiply(
-            output[channel],
-            earlyReflectionBuffer[channel]
-                + earlyref_Buffersize - blockSize - directAndEarlyDelay,
-            reverbGain,
-            blockSize);
+        copyRingWithMultiply(output[channel],
+                             directSoundBuffer[channel],
+                             directReadPosition,
+                             directGain,
+                             blockSize);
+        addRingWithMultiply(output[channel],
+                            earlyReflectionBuffer[channel],
+                            earlyReadPosition,
+                            reverbGain,
+                            blockSize);
         juce::FloatVectorOperations::addWithMultiply(output[channel],
                                                       fdn.Output[channel],
                                                       reverbGain,
                                                       blockSize);
     }
+
+    delayWritePosition = (delayWritePosition + static_cast<std::size_t>(blockSize))
+        % earlyref_Buffersize;
 
    #if defined(AMBVERB_STEREO_COMPATIBILITY)
     const auto* wOutput = processingBuffer.getReadPointer(0);

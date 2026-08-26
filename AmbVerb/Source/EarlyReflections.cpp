@@ -85,7 +85,11 @@ EarlyRef::EarlyRef() {
         perror("Error Allocating Memory"); return;
     }
 
-    audioInputSpectrum.allocate(earlyref_Buffersize);
+    for (int i = 0; i < NumAmbisonicsChannels; ++i) {
+        audioInputSpectrum[i].allocate(earlyref_Buffersize);
+        matrixOutputSpectrum[i].allocate(earlyref_Buffersize);
+    }
+
     matrixProductSpectrum.allocate(earlyref_Buffersize);
 
     fftScale = 0.5f / (float)(16.0f * earlyref_Buffersize);
@@ -169,11 +173,10 @@ void EarlyRef::reset() {
 
     FFTconvBuffer1.clear();
     FilterBuffer.clear();
+    outBufferReadPosition = 0;
 }
 
-void EarlyRef::processBlock(const float *const Block[], int DspBlocksize, double pB_Samplerate) {
-    juce::ignoreUnused(pB_Samplerate);
-
+void EarlyRef::processBlock(const float *const Block[], int DspBlocksize) {
     if (DspBlocksize <= 0 || static_cast<std::size_t>(DspBlocksize) > earlyref_Buffersize) {
         jassertfalse;
         return;
@@ -190,7 +193,19 @@ void EarlyRef::processBlock(const float *const Block[], int DspBlocksize, double
 
     for (int i = 0; i < NumAmbisonicsChannels; i++) {
         // - - - - - Ausgabe - - - - - -
-        memcpy(Output[i], OutBuffer[i], DspBlocksize * sizeof(float)); //Verzögerung der Erstreflexionen
+        const auto firstPart = juce::jmin(
+            static_cast<std::size_t>(DspBlocksize),
+            earlyref_Buffersize - outBufferReadPosition);
+        memcpy(Output[i],
+               OutBuffer[i] + outBufferReadPosition,
+               firstPart * sizeof(float)); //Verzögerung der Erstreflexionen
+
+        if (firstPart < static_cast<std::size_t>(DspBlocksize)) {
+            memcpy(Output[i] + firstPart,
+                   OutBuffer[i],
+                   (static_cast<std::size_t>(DspBlocksize) - firstPart) * sizeof(float));
+        }
+
         //memcpy(Output[i], OutBuffer[i]+ (int) (EarlyrefDelayTime * Q/100.0), DspBlocksize * sizeof(float)); //Verzögerung der Erstreflexionen
 
         Filter_InitialSample[i] = LowPass(Output[i],
@@ -203,40 +218,54 @@ void EarlyRef::processBlock(const float *const Block[], int DspBlocksize, double
         juce::FloatVectorOperations::multiply(Output[i], earlyrefVolume, DspBlocksize);
 
         // - - - - - Vorbereitung für den nächsten Block - - - - -
-        memmove(OutBuffer[i], OutBuffer[i] + DspBlocksize, (earlyref_Buffersize - DspBlocksize) * sizeof(float));
-        juce::FloatVectorOperations::clear(
-            OutBuffer[i] + (earlyref_Buffersize - DspBlocksize), DspBlocksize);
+        juce::FloatVectorOperations::clear(OutBuffer[i] + outBufferReadPosition,
+                                            static_cast<int>(firstPart));
+
+        if (firstPart < static_cast<std::size_t>(DspBlocksize)) {
+            juce::FloatVectorOperations::clear(
+                OutBuffer[i],
+                DspBlocksize - static_cast<int>(firstPart));
+        }
     }
+
+    outBufferReadPosition = (outBufferReadPosition + static_cast<std::size_t>(DspBlocksize))
+        % earlyref_Buffersize;
 }
 
 /* === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === */
 // Matrix Convolution
 /* === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === */
 void EarlyRef:: MatrixConvolution() {
+    for (int b = 0; b < NumAmbisonicsChannels; ++b)
+        audioFft.forwardVdspCompatible(InBuffer[b], audioInputSpectrum[b]);
+
     for (int m = 0; m < NumAmbisonicsChannels; m++) {
+        matrixOutputSpectrum[m].clear();
+
         for (int b = 0; b < NumAmbisonicsChannels; b++) {
             if (NonZeroEntriesXYZ[m][b] == 1) {
-                FFTconvolution(InBuffer[b], fft_Rxyz[m][b], FFTconvBuffer1);
-                juce::FloatVectorOperations::addWithMultiply(OutBuffer[m],
-                                                              FFTconvBuffer1,
-                                                              fftScale,
-                                                              earlyref_Buffersize);
+                PortableRealFft::multiply(audioInputSpectrum[b],
+                                           fft_Rxyz[m][b],
+                                           matrixProductSpectrum);
+                PortableRealFft::add(matrixProductSpectrum, matrixOutputSpectrum[m]);
             }
         }
-    }
-}
 
-/* === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === */
-// FFT Convolution of IR and IR
-/* === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === === */
-void EarlyRef::FFTconvolution(float* signal,
-                             const SpectrumBuffer& impulseResponse,
-                             float* convolutionBuffer) {
-    audioFft.forwardVdspCompatible(signal, audioInputSpectrum);
-    PortableRealFft::multiply(audioInputSpectrum,
-                              impulseResponse,
-                              audioInputSpectrum);
-    audioFft.inverseVdspCompatible(audioInputSpectrum, convolutionBuffer);
+        audioFft.inverseVdspCompatible(matrixOutputSpectrum[m], FFTconvBuffer1);
+        const auto firstPart = earlyref_Buffersize - outBufferReadPosition;
+        juce::FloatVectorOperations::addWithMultiply(OutBuffer[m] + outBufferReadPosition,
+                                                      FFTconvBuffer1,
+                                                      fftScale,
+                                                      static_cast<int>(firstPart));
+
+        if (firstPart < earlyref_Buffersize) {
+            juce::FloatVectorOperations::addWithMultiply(
+                OutBuffer[m],
+                FFTconvBuffer1 + firstPart,
+                fftScale,
+                static_cast<int>(earlyref_Buffersize - firstPart));
+        }
+    }
 }
 
 float EarlyRef:: h(float alpha, float beta, int lambda) {

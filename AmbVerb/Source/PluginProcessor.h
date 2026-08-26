@@ -84,6 +84,7 @@ private:
 
     FloatBuffer directSoundBuffer[NumAmbisonicsChannels];
     FloatBuffer earlyReflectionBuffer[NumAmbisonicsChannels];
+    std::size_t delayWritePosition = 0;
    #if defined(AMBVERB_STEREO_COMPATIBILITY)
     juce::AudioBuffer<float> stereoCompatibilityBuffer;
    #endif

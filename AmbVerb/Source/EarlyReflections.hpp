@@ -15,7 +15,7 @@ public:
     EarlyRef();
     ~EarlyRef() = default;
 
-    void processBlock(const float* const block[], int dspBlockSize, double sampleRate);
+    void processBlock(const float* const block[], int dspBlockSize);
     void reset();
 
     void set_Q(float value);
@@ -55,9 +55,6 @@ private:
     void CheckforNonZeroEntriesZ();
     void CheckforNonZeroEntriesXYZ();
     void MatrixConvolution();
-    void FFTconvolution(float* signal,
-                        const SpectrumBuffer& impulseResponse,
-                        float* convolutionBuffer);
     float LowPass(float* input,
                   double gain,
                   double pole,
@@ -97,12 +94,14 @@ private:
     SpectrumBuffer fft_Rx[NumAmbisonicsChannels][NumAmbisonicsChannels];
     SpectrumBuffer fft_Ry[NumAmbisonicsChannels][NumAmbisonicsChannels];
     SpectrumBuffer fft_Rz[NumAmbisonicsChannels][NumAmbisonicsChannels];
-    SpectrumBuffer audioInputSpectrum;
+    SpectrumBuffer audioInputSpectrum[NumAmbisonicsChannels];
+    SpectrumBuffer matrixOutputSpectrum[NumAmbisonicsChannels];
     SpectrumBuffer matrixProductSpectrum;
     FloatBuffer FFTconvBuffer1;
     PortableRealFft audioFft { earlyref_Log2N };
     PortableRealFft matrixFft { earlyref_Log2N };
     float fftScale = 0.0f;
+    std::size_t outBufferReadPosition = 0;
 
     juce::SpinLock matrixLock;
     std::atomic<bool> matrixReady { false };
