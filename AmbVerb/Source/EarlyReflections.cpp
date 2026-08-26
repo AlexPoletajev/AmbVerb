@@ -6,12 +6,43 @@
 //  Copyright © 2023 Alexander Poletajev. All rights reserved.
 //
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <sstream>
 #include "EarlyReflections.hpp"
+
+namespace
+{
+double integerBesselJ(int order, double argument) noexcept
+{
+    jassert(order >= 0);
+
+    const double halfArgument = 0.5 * argument;
+    double term = 1.0;
+
+    for (int i = 1; i <= order; ++i)
+        term *= halfArgument / static_cast<double>(i);
+
+    double result = term;
+
+    for (int k = 1; k <= 64; ++k) {
+        term *= -(halfArgument * halfArgument)
+            / (static_cast<double>(k) * static_cast<double>(order + k));
+        result += term;
+
+        if (std::abs(term)
+            <= std::numeric_limits<double>::epsilon()
+                * std::max(1.0, std::abs(result)))
+            break;
+    }
+
+    return result;
+}
+}
 
 EarlyRef::EarlyRef() {
     earlyrefVolume = 0.7;
@@ -210,8 +241,8 @@ void EarlyRef::FFTconvolution(float* signal,
 
 float EarlyRef:: h(float alpha, float beta, int lambda) {
     return std::cos(juce::MathConstants<float>::halfPi * std::abs(lambda) + beta)
-        * static_cast<float>(std::cyl_bessel_j(std::abs(lambda),
-                                               static_cast<double>(std::abs(alpha))));
+        * static_cast<float>(integerBesselJ(std::abs(lambda),
+                                            static_cast<double>(std::abs(alpha))));
 }
 
 void EarlyRef:: fillhBuffer(float phi, int offset, int Q) {
