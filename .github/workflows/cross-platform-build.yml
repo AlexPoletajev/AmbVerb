@@ -12,9 +12,9 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            targets: AmbVerb_Standalone AmbVerb_VST3 AmbVerbAudioRegression
+            targets: AmbVerb_Standalone AmbVerb_VST3 AmbVerbAudioRegression AmbVerbPartitionedConvolutionTest
           - os: ubuntu-24.04
-            targets: AmbVerb_Standalone AmbVerb_VST3 AmbVerb_LV2 AmbVerbAudioRegression
+            targets: AmbVerb_Standalone AmbVerb_VST3 AmbVerb_LV2 AmbVerbAudioRegression AmbVerbPartitionedConvolutionTest
 
     runs-on: ${{ matrix.os }}
 

@@ -19,7 +19,8 @@ jobs:
       - name: Build plug-ins
         run: >-
           cmake --build Build --config Release --parallel 3
-          --target AmbVerb_Standalone AmbVerb_VST3 AmbVerb_AU AmbVerbAudioRegression
+          --target AmbVerb_Standalone AmbVerb_VST3 AmbVerb_AU
+          AmbVerbAudioRegression AmbVerbPartitionedConvolutionTest
 
       - name: Run tests
         run: ctest --test-dir Build -C Release --output-on-failure
