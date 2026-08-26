@@ -12,6 +12,24 @@
       <FILE id="Fc8spE" name="PluginEditor.cpp" compile="1" resource="0"
             file="Source/PluginEditor.cpp"/>
       <FILE id="HBOnWK" name="PluginEditor.h" compile="0" resource="0" file="Source/PluginEditor.h"/>
+      <FILE id="bufSto" name="BufferStorage.hpp" compile="0" resource="0"
+            file="Source/BufferStorage.hpp"/>
+      <FILE id="cmpFlg" name="CompilationFlags.h" compile="0" resource="0"
+            file="Source/CompilationFlags.h"/>
+      <FILE id="earCpp" name="EarlyReflections.cpp" compile="1" resource="0"
+            file="Source/EarlyReflections.cpp"/>
+      <FILE id="earHpp" name="EarlyReflections.hpp" compile="0" resource="0"
+            file="Source/EarlyReflections.hpp"/>
+      <FILE id="fdnCpp" name="FeedbackDelayNetwork.cpp" compile="1" resource="0"
+            file="Source/FeedbackDelayNetwork.cpp"/>
+      <FILE id="fdnHpp" name="FeedbackDelayNetwork.hpp" compile="0" resource="0"
+            file="Source/FeedbackDelayNetwork.hpp"/>
+    </GROUP>
+    <GROUP id="matRes" name="RotationMatrices">
+      <FILE id="rxz31r" name="Rxz3_1" compile="0" resource="1" file="RotationMatrices/Rxz3_1"/>
+      <FILE id="rxz32r" name="Rxz3_2" compile="0" resource="1" file="RotationMatrices/Rxz3_2"/>
+      <FILE id="ryz31r" name="Ryz3_1" compile="0" resource="1" file="RotationMatrices/Ryz3_1"/>
+      <FILE id="ryz32r" name="Ryz3_2" compile="0" resource="1" file="RotationMatrices/Ryz3_2"/>
     </GROUP>
   </MAINGROUP>
   <MODULES>
@@ -32,7 +50,8 @@
   </MODULES>
   <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_VST3_CAN_REPLACE_VST2="0"/>
   <EXPORTFORMATS>
-    <XCODE_MAC targetFolder="Builds/MacOSX" extraDefs="JUCE_SILENCE_XCODE_15_LINKER_WARNING&#10;JUCE_MODAL_LOOPS_PERMITTED=1">
+    <XCODE_MAC targetFolder="Builds/MacOSX" cppLanguageStandard="17"
+               extraDefs="JUCE_SILENCE_XCODE_15_LINKER_WARNING">
       <CONFIGURATIONS>
         <CONFIGURATION isDebug="1" name="Debug" targetName="AmbVerb"/>
         <CONFIGURATION isDebug="0" name="Release" targetName="AmbVerb"/>

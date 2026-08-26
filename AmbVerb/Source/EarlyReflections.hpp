@@ -1,98 +1,109 @@
-//
-//  EarlyReflections.hpp
-//  AmbVerb
-//
-//  Created by Alexander Poletajev on 30/11/23.
-//  Copyright © 2023 Alexander Poletajev. All rights reserved.
-//
+#pragma once
 
-#ifndef EarlyReflections_hpp
-#define EarlyReflections_hpp
+#include <juce_core/juce_core.h>
 
 #include <Accelerate/Accelerate.h>
-#include <iostream>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>    /* srand, rand */
-#include <string.h>
+
+#include <atomic>
+#include <string_view>
+
+#include "BufferStorage.hpp"
 #include "CompilationFlags.h"
-#include "math.h"
-#include "time.h"
-
-//==============================================================================
-
 
 class EarlyRef
 {
 public:
-
     EarlyRef();
     ~EarlyRef();
-    void processBlock(const float *const Block[], int DspBlocksize, double pB_Samplerate); // DSP-Cycle
-    void set_Q(float f);
-    void set_RotAngle(float f);
-    void set_EarlyrefVolume(float Value);
-    int getQ() {
-        return Q;
-    }
 
-    void readTransformationMatrix(std::string Path);//Einlesen der Rzx, Rxz, Rzy, Ryz Transformationsmatrizen
-    void UnlockRotationMatrixForCalculaion(); //Freigabe der neuberechneten Matrizen für den Signalfluss (Vermeidung von Glitches)
+    void processBlock(const float* const block[], int dspBlockSize, double sampleRate);
+    void reset();
 
-    //==============================================================================
+    void set_Q(float value);
+    void set_RotAngle(float value);
+    void set_EarlyrefVolume(float value);
 
-    float *OutBuffer[NumAmbisonicsChannels];  //Buffer für das Ergebnis der Rotationen
-    float *Output[NumAmbisonicsChannels];  //Endgültiger Ausgabebuffer der Erstreflexionen
-    int EarlyrefDelayTime, EndOfIR, IRsymmetryPoint; //Verzögerung, Anfangssample der Ersreflexionen, Ende der Erstreflexionen
-    float FilterCoeffA, FilterCoeffB; // Filterkoeffizienten des Tiefpass'
-    int OnsetLength;
+    [[nodiscard]] int getQ() const noexcept { return Q; }
+
+    bool readTransformationMatrices(std::string_view rxz,
+                                    std::string_view rzx,
+                                    std::string_view ryz,
+                                    std::string_view rzy);
+
+    // Activates a completely calculated matrix. Safe to call from the audio
+    // thread; it never waits for an in-progress background calculation.
+    void UnlockRotationMatrixForCalculaion();
+
+    FloatBuffer OutBuffer[NumAmbisonicsChannels];
+    FloatBuffer Output[NumAmbisonicsChannels];
+    int EarlyrefDelayTime = 0;
+    int EndOfIR = 0;
+    int IRsymmetryPoint = 0;
+    std::atomic<float> FilterCoeffA { 1.0f };
+    std::atomic<float> FilterCoeffB { 0.0f };
+    int OnsetLength = 0;
 
 private:
-    float h(float alpha, float beta, int lambda); // hankelfunktion
-    void fillhBuffer(float phi, int offset, int Q); // Berechnung der dünnbesetzten Impulsantworten für Rz
-    void CalculateRotationMatrices(int QValue, float PhiValue); //Start der Matrizenberechnungen
+    float h(float alpha, float beta, int lambda);
+    void fillhBuffer(float phi, int offset, int q);
+    void CalculateRotationMatrices(int qValue, float phiValue);
     void CalculateRx();
     void CalculateRy();
-    void CalculateRz(int QValue, float PhiValue);
+    void CalculateRz(int qValue, float phiValue);
     void CalculateRxyz();
     void CheckforNonZeroEntriesX();
     void CheckforNonZeroEntriesY();
     void CheckforNonZeroEntriesZ();
     void CheckforNonZeroEntriesXYZ();
-    void MatrixConvolution(); //Mehrdimensional Faltung der Endgültigen Rotationsmatrix mit dem Eingangsvektor
-    void FFTconvolution(float *IR1, DSPSplitComplex *IR2, float *FFTConvolutionBuffer);   //Eindimensionale Faltung
-    void On(); // Synthese An
-    void Off(); //Synthese Aus
-    float LowPass(float *LP_Input, double LP_g, double LP_p, float LP_initialSample, float *LP_FilterBuffer, const int LP_Blocksize);
+    void MatrixConvolution();
+    void FFTconvolution(float* signal,
+                        DSPSplitComplex* impulseResponse,
+                        float* convolutionBuffer);
+    float LowPass(float* input,
+                  double gain,
+                  double pole,
+                  float initialSample,
+                  float* filterBuffer,
+                  int blockSize);
 
-    //==============================================================================
-    float earlyrefVolume;
-    int Q, Q_TEMP, Phi;
+    float earlyrefVolume = 0.7f;
+    int Q = Qmax;
+    int Q_TEMP = Qmax;
+    int Phi = 80;
 
-    float *InBuffer[NumAmbisonicsChannels];  //Eingangssignal Vektor
+    FloatBuffer InBuffer[NumAmbisonicsChannels];
+    FloatBuffer DummyMatrix1[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    FloatBuffer Rx[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    FloatBuffer Ry[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    FloatBuffer Rz10[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    FloatBuffer Rz13[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    FloatBuffer Rz19[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    float Rxz[NumAmbisonicsChannels][NumAmbisonicsChannels] {};
+    float Rzx[NumAmbisonicsChannels][NumAmbisonicsChannels] {};
+    float Ryz[NumAmbisonicsChannels][NumAmbisonicsChannels] {};
+    float Rzy[NumAmbisonicsChannels][NumAmbisonicsChannels] {};
+    FloatBuffer Rxyz[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    FloatBuffer hBuffer[(AmbisonicsOrder * 2 + 1) * 2];
+    float Filter_InitialSample[NumAmbisonicsChannels] {};
+    FloatBuffer FilterBuffer;
 
-    float *DummyMatrix1[NumAmbisonicsChannels][NumAmbisonicsChannels];  // Temporäre SignalMatrix für Berechnungen
-    float *Rx[NumAmbisonicsChannels][NumAmbisonicsChannels], *Ry[NumAmbisonicsChannels][NumAmbisonicsChannels], *Rz10[NumAmbisonicsChannels][NumAmbisonicsChannels], *Rz13[NumAmbisonicsChannels][NumAmbisonicsChannels], *Rz19[NumAmbisonicsChannels][NumAmbisonicsChannels];      // Rotations-FaltungsMatrizen mit Impulsantworten im Zeitbereich
-    float Rxz[NumAmbisonicsChannels][NumAmbisonicsChannels], Rzx[NumAmbisonicsChannels][NumAmbisonicsChannels], Ryz[NumAmbisonicsChannels][NumAmbisonicsChannels], Rzy[NumAmbisonicsChannels][NumAmbisonicsChannels]; // Transformationsmatrizen zur Abbildung der x,y-Achse auf die z-Achse und zurück
-    float *Rxyz[NumAmbisonicsChannels][NumAmbisonicsChannels];
-    float *hBuffer[(AmbisonicsOrder * 2 + 1) * 2];   // dünnbesetzten Impulsantworten für Rz:  h(m,phi)
-    float *dummyBuffer1[NumAmbisonicsChannels];  //Hilfsbuffer für Berechnungen
-    float *IR[NumAmbisonicsChannels], *IR_TEMP[NumAmbisonicsChannels];  //Buffer für Impulsantworten des Systems
-    float *DUMMYVECTOR1, *DUMMYVECTOR2;   //Hilfsvektor für Berechnungen
-    float Filter_InitialSample[NumAmbisonicsChannels]; //Initiales Sample für Tiefpass(Kausalität)
-    float *FilterBuffer;  //Buffer für Filterausgabe
+    int NonZeroEntriesX[NumAmbisonicsChannels][NumAmbisonicsChannels] {};
+    int NonZeroEntriesY[NumAmbisonicsChannels][NumAmbisonicsChannels] {};
+    int NonZeroEntriesZ[NumAmbisonicsChannels][NumAmbisonicsChannels] {};
+    int NonZeroEntriesXYZ[NumAmbisonicsChannels][NumAmbisonicsChannels] {};
+    int NonZeroEntriesXYZ_TEMP[NumAmbisonicsChannels][NumAmbisonicsChannels] {};
 
+    OwnedSplitComplex fft_Rxyz[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    OwnedSplitComplex fft_Rxyz_TEMP[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    OwnedSplitComplex fft_Rx[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    OwnedSplitComplex fft_Ry[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    OwnedSplitComplex fft_Rz[NumAmbisonicsChannels][NumAmbisonicsChannels];
+    OwnedSplitComplex SplitComplexBuffer1;
+    OwnedSplitComplex SplitComplexBuffer2;
+    FloatBuffer FFTconvBuffer1;
+    FFTSetup fftConvSetup = nullptr;
+    float fftScale = 0.0f;
 
-    int NonZeroEntriesX[NumAmbisonicsChannels][NumAmbisonicsChannels], NonZeroEntriesY[NumAmbisonicsChannels][NumAmbisonicsChannels], NonZeroEntriesZ[NumAmbisonicsChannels][NumAmbisonicsChannels], NonZeroEntriesXYZ[NumAmbisonicsChannels][NumAmbisonicsChannels], NonZeroEntriesXYZ_TEMP[NumAmbisonicsChannels][NumAmbisonicsChannels]; //Andere Matrixeinträge können bei Berechnungen übersprungen werden
-
-    // Variablen für fft
-    DSPSplitComplex fft_Rxyz[NumAmbisonicsChannels][NumAmbisonicsChannels], fft_Rxyz_TEMP[NumAmbisonicsChannels][NumAmbisonicsChannels], fft_Rx[NumAmbisonicsChannels][NumAmbisonicsChannels], fft_Ry[NumAmbisonicsChannels][NumAmbisonicsChannels], fft_Rz[NumAmbisonicsChannels][NumAmbisonicsChannels]; //Rotationsmatrizen im Spektralbereich
-    DSPSplitComplex SplitComplexBuffer1, SplitComplexBuffer2;  //HilfsMatrizen für Berechnungen im Spektralbereich
-    float *FFTconvBuffer1, *FFTconvBuffer2;  //Hilfs-buffer für Berechnungen im Spektralbereich
-    FFTSetup fftConvSetup;
-    float fftScale; //Skalierung der fft Ergebnisse
-
-    //==============================================================================
+    juce::SpinLock matrixLock;
+    std::atomic<bool> matrixReady { false };
 };
-
-#endif /* EarlyReflections_hpp */

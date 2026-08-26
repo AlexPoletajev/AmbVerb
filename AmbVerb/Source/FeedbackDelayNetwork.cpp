@@ -8,12 +8,17 @@
 
 #include "FeedbackDelayNetwork.hpp"
 
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
+#include <iterator>
+#include <stdexcept>
+
 
 FDN::FDN() {
-    printf("FDN Consturctor\n");
 
     for (int i = 0; i < NumAmbisonicsChannels; i++) {
-        Output[i] =      (float *)calloc(fdn_Buffersize, sizeof(Output[i]));
+        Output[i].allocate(fdn_Buffersize);
 
         if (Output[i] == nullptr) {
             perror("Error Allocating Memory9"); return;
@@ -21,67 +26,61 @@ FDN::FDN() {
     }
 
     for (int i = 0; i < NumDelaylines; i++) {
-        Delayline_leftEnd[i] =              (float *)calloc(fdn_Buffersize, sizeof(Delayline_leftEnd[i]));
+        Delayline_leftEnd[i].allocate(fdn_Buffersize);
 
         if (Delayline_leftEnd[i] == nullptr) {
             perror("Error Allocating Memory"); return;
         }
 
-        IR_Delayline_leftEnd[i] =              (float *)calloc(fdn_Buffersize, sizeof(IR_Delayline_leftEnd[i]));
+        IR_Delayline_leftEnd[i].allocate(fdn_Buffersize);
 
         if (IR_Delayline_leftEnd[i] == nullptr) {
             perror("Error Allocating Memory"); return;
         }
 
-        IR[i] =                  (float *)calloc( (fdn_Buffersize), sizeof(IR[i]) );
+        IR[i].allocate(fdn_Buffersize);
 
         if (IR[i] == nullptr) {
             perror("Error Allocating Memory"); return;
         }
 
-        fft_IR[i].realp =       (float *)calloc(fdn_Buffersize / 2, sizeof(fft_IR[i].realp));
+        fft_IR[i].allocate(fdn_Buffersize / 2);
 
         if (fft_IR[i].realp == nullptr) {
             perror("Error Allocating Memory"); return;
         }
 
-        fft_IR[i].imagp =       (float *)calloc(fdn_Buffersize / 2, sizeof(fft_IR[i].imagp));
-
         if (fft_IR[i].imagp == nullptr) {
             perror("Error Allocating Memory"); return;
         }
 
-        fft_IR_temp[i].realp =       (float *)calloc(fdn_Buffersize / 2, sizeof(fft_IR_temp[i].realp));
+        fft_IR_temp[i].allocate(fdn_Buffersize / 2);
 
         if (fft_IR_temp[i].realp == nullptr) {
             perror("Error Allocating Memory"); return;
         }
 
-        fft_IR_temp[i].imagp =       (float *)calloc(fdn_Buffersize / 2, sizeof(fft_IR_temp[i].imagp));
-
         if (fft_IR_temp[i].imagp == nullptr) {
             perror("Error Allocating Memory"); return;
         }
 
-        fft_Delaylines[i].realp =   (float *)calloc(fdn_Buffersize / 2, sizeof(fft_Delaylines[i].realp));
+        fft_Delaylines[i].allocate(fdn_Buffersize / 2);
 
         if (fft_Delaylines[i].realp == nullptr) {
             perror("Error Allocating Memory"); return;
         }
 
-        fft_Delaylines[i].imagp =   (float *)calloc(fdn_Buffersize / 2, sizeof(fft_Delaylines[i].imagp));
-
         if (fft_Delaylines[i].imagp == nullptr) {
             perror("Error Allocating Memory"); return;
         }
 
-        TempBuffer[i] =         (float *)calloc(fdn_Buffersize, sizeof(TempBuffer[i]));
+        TempBuffer[i].allocate(fdn_Buffersize);
 
         if (TempBuffer[i] == nullptr) {
             perror("Error Allocating Memory"); return;
         }
 
-        EarlyReflectionsBuffer[i] = (float *)calloc(fdn_Buffersize, sizeof(EarlyReflectionsBuffer[i]));
+        EarlyReflectionsBuffer[i].allocate(fdn_Buffersize);
 
         if (EarlyReflectionsBuffer[i] == nullptr) {
             perror("Error Allocating Memory"); return;
@@ -91,47 +90,43 @@ FDN::FDN() {
         IR_Filter_initialSample[i] = 0;
     }
 
-    inBuffer = (float *)calloc(fdn_Buffersize, sizeof(inBuffer));
+    inBuffer.allocate(fdn_Buffersize);
 
     if (inBuffer == nullptr) {
         perror("Error Allocating Memory"); return;
     }
 
-    IR_inBuffer = (float *)calloc(fdn_Buffersize, sizeof(IR_inBuffer));
+    IR_inBuffer.allocate(fdn_Buffersize);
 
     if (IR_inBuffer == nullptr) {
         perror("Error Allocating Memory"); return;
     }
 
-    FilterBuffer = (float *)calloc(fdn_Buffersize, sizeof(FilterBuffer));
+    FilterBuffer.allocate(fdn_Buffersize);
 
     if (FilterBuffer == nullptr) {
         perror("Error Allocating Memory"); return;
     }
 
-    IR_FilterBuffer = (float *)calloc(fdn_Buffersize, sizeof(IR_FilterBuffer));
+    IR_FilterBuffer.allocate(fdn_Buffersize);
 
     if (IR_FilterBuffer == nullptr) {
         perror("Error Allocating Memory"); return;
     }
 
-    IR_TempBuffer1 =         (float *)calloc(fdn_Buffersize, sizeof(IR_TempBuffer1));
+    IR_TempBuffer1.allocate(fdn_Buffersize);
 
     if (IR_TempBuffer1 == nullptr) {
         perror("Error Allocating Memory"); return;
     }
 
-    IR_TempBuffer2 =         (float *)calloc(fdn_Buffersize, sizeof(IR_TempBuffer2));
-
-    if (IR_TempBuffer2 == nullptr) {
-        perror("Error Allocating Memory"); return;
-    }
-
-    Window =         (float *)calloc(fdn_Buffersize, sizeof(Window));
+    Window.allocate(fdn_Buffersize);
 
     if (Window == nullptr) {
         perror("Error Allocating Memory"); return;
     }
+
+    fft_Input.allocate(fdn_Buffersize / 2);
 
     /* --- --- --- ---  FeedBackMatrix Bereitstellen --- --- --- --- */
     int Hadamard[32][32] = { { 1, 1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1  },
@@ -259,64 +254,89 @@ FDN::FDN() {
     fftSetup = vDSP_create_fftsetup(fdn_Log2N, FFT_RADIX2);
 
     if (fftSetup == nullptr) {
-        perror("Error, vDSP_create_fftsetup failed.\n");
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("Unable to create the FDN FFT setup");
     }
 
     fdnVol = 0.7;
     T60Ratio = 0.25;
     T60 = 2.0;
     fftScale = 1.0f / (float)(4 * fdn_Buffersize);
-    check = 0;
     Samplerate = 44100.0;
-    setDelayTimes(1000, 2000);
-    unlockParamtersOnOff = 0;
+    setParameters(MinRoomsize,
+                  MaxRoomsize,
+                  T60,
+                  T60Ratio,
+                  static_cast<int>(WindowStartsAt_xRoomsize * MinRoomsize),
+                  static_cast<int>(WindowStartsAt_xRoomsize * MinRoomsize + 1000));
+
+    const juce::SpinLock::ScopedLockType lock(parameterLock);
+    unlockParameters();
+    unlockParamtersOnOff.store(false, std::memory_order_release);
 }
 
 FDN::~FDN() {
-    for (int i = 0; i < NumDelaylines; i++) {
-        free(Delayline_leftEnd[i]);
-        free(IR_Delayline_leftEnd[i]);
+    if (fftSetup != nullptr)
+        vDSP_destroy_fftsetup(fftSetup);
+}
 
-        free(IR[i]);
-        free(fft_IR[i].realp);
-        free(fft_IR[i].imagp);
-        free(fft_IR_temp[i].realp);
-        free(fft_IR_temp[i].imagp);
-        free(fft_Delaylines[i].realp);
-        free(fft_Delaylines[i].imagp);
-        free(TempBuffer[i]);
-        free(EarlyReflectionsBuffer[i]);
+void FDN::prepare(double sampleRate, int maximumBlockSize) {
+    if (sampleRate <= 0.0
+        || maximumBlockSize <= 0
+        || static_cast<std::size_t>(maximumBlockSize) > fdn_Buffersize)
+        throw std::invalid_argument("Unsupported FDN sample rate or maximum block size");
+
+    {
+        const juce::SpinLock::ScopedLockType lock(parameterLock);
+        Samplerate = sampleRate;
+        setDelayTimesUnchecked(static_cast<float>(minDelaytime),
+                               static_cast<float>(maxDelaytime));
+        refreshWindow();
+        unlockParameters();
+        unlockParamtersOnOff.store(false, std::memory_order_release);
     }
 
-    for (int i = 0; i < NumAmbisonicsChannels; i++) {
-        free(Output[i]);
+    reset();
+}
+
+void FDN::reset() {
+    inBuffer.clear();
+    IR_inBuffer.clear();
+    FilterBuffer.clear();
+    IR_FilterBuffer.clear();
+    IR_TempBuffer1.clear();
+
+    for (int i = 0; i < NumDelaylines; ++i) {
+        Delayline_leftEnd[i].clear();
+        IR_Delayline_leftEnd[i].clear();
+        TempBuffer[i].clear();
+        EarlyReflectionsBuffer[i].clear();
+        Filter_initialSample[i] = 0.0f;
+        IR_Filter_initialSample[i] = 0.0f;
     }
 
-    free(inBuffer);
-    free(IR_inBuffer);
-    free(IR_FilterBuffer);
-    free(FilterBuffer);
-    free(IR_TempBuffer1);
-    free(IR_TempBuffer2);
-    free(Window);
+    for (auto& output : Output)
+        output.clear();
 }
 
 void FDN::processBlock(const float *Block, int DspBlocksize, double pB_Samplerate) {
-    if (unlockParamtersOnOff == 1) {
-        unlockParameters();
-        unlockParamtersOnOff = 0;
+    if (DspBlocksize <= 0 || static_cast<std::size_t>(DspBlocksize) > fdn_Buffersize) {
+        jassertfalse;
+        return;
+    }
+
+    if (unlockParamtersOnOff.load(std::memory_order_acquire)) {
+        const juce::SpinLock::ScopedTryLockType lock(parameterLock);
+
+        if (lock.isLocked()) {
+            unlockParameters();
+            unlockParamtersOnOff.store(false, std::memory_order_release);
+        }
     }
 
     int i, u, NumCycles;
     int CustomBlocksize_temp;
 
-    if (Samplerate != pB_Samplerate) {
-        Samplerate = pB_Samplerate;
-        setFilterCoefficients();
-    } else {
-        Samplerate = pB_Samplerate;
-    }
+    jassert(std::abs(Samplerate - pB_Samplerate) < 0.5);
 
     // - - - - - Eigene Blocksize wählen, falls nötig - - - - - //
     if (DspBlocksize >= DelayTimes[0]) {
@@ -343,7 +363,7 @@ void FDN::processBlock(const float *Block, int DspBlocksize, double pB_Samplerat
         // - - - - - Variables für BufferOrganisation and Handling - - - - - //
 
         for (i = 0; i < NumDelaylines; i++) {
-            Delayline_rightEnd[i] = Delayline_leftEnd[i] + fdn_Buffersize - CustomBlocksize - 1;   // Pointer to Beginning of Delay Line
+            Delayline_rightEnd[i] = Delayline_leftEnd[i] + fdn_Buffersize - CustomBlocksize;   // Pointer to Beginning of Delay Line
         }
 
         for (i = 0; i < NumDelaylines; i++) {
@@ -384,7 +404,7 @@ void FDN::processBlock(const float *Block, int DspBlocksize, double pB_Samplerat
     }
 
     for (i = 0; i < NumDelaylines; i++) { //Set first block to 0
-        memset(EarlyReflectionsBuffer[i] + (fdn_Buffersize - DspBlocksize - 1), 0.0, DspBlocksize * sizeof(float));
+        memset(EarlyReflectionsBuffer[i] + (fdn_Buffersize - DspBlocksize), 0.0, DspBlocksize * sizeof(float));
     }
 
     getWindowedOutput(DspBlocksize);
@@ -439,7 +459,7 @@ void FDN::getIR() {
 
     /*------ Variables for BufferOrganisation and Handling ------ */
     for (i = 0; i < NumDelaylines; i++) {
-        IR_Delayline_rightEnd[i] = IR_Delayline_leftEnd[i] + fdn_Buffersize - gIR_Blocksize - 1;  // Pointer to Beginning of Delay Line
+        IR_Delayline_rightEnd[i] = IR_Delayline_leftEnd[i] + fdn_Buffersize - gIR_Blocksize;  // Pointer to Beginning of Delay Line
     }
 
     for (i = 0; i < NumDelaylines; i++) {
@@ -476,16 +496,23 @@ void FDN::getIR() {
 void FDN:: windowIR() {
     vDSP_vclr(Window, 1, fdn_Buffersize);
 
-    for (int i = 0; i < tMixStart; i++) {
+    const int windowStart = juce::jlimit(0, static_cast<int>(fdn_Buffersize), tMixStart);
+    const int windowEnd = juce::jlimit(windowStart, static_cast<int>(fdn_Buffersize), tMixEnd);
+
+    for (int i = 0; i < windowStart; i++) {
         *(Window + i) = 1.0f;
         //printf("%f\n", *(Window + i));
     }
 
-    int CrossfadeLength = tMixStart - tMixEnd;
+    const int CrossfadeLength = windowEnd - windowStart;
 
     //printf("tMiuxStart = %i, tMixEnd = %i\n", tMixStart, tMixEnd);
-    for (int i = tMixStart; i < tMixEnd; i++) {
-        *(Window + i) = 1.0 - (sinf(-M_PI_2 + M_PI * (i - tMixStart) / (CrossfadeLength - 1)) + 1.0) / 2.0;
+    for (int i = windowStart; i < windowEnd; i++) {
+        const auto position = CrossfadeLength > 1
+            ? static_cast<float>(i - windowStart) / static_cast<float>(CrossfadeLength - 1)
+            : 1.0f;
+        *(Window + i) = 1.0f - (std::sin(-juce::MathConstants<float>::halfPi
+                                          + juce::MathConstants<float>::pi * position) + 1.0f) / 2.0f;
         //printf("%f\n", *(Window + i));
     }
 
@@ -497,7 +524,7 @@ void FDN:: windowIR() {
         // Reinterpret Input as SplitComplex
         vDSP_vmul(Window, 1, IR[i], 1, IR_TempBuffer1, 1, fdn_Buffersize);
 
-        vDSP_ctoz((DSPComplex *)IR_TempBuffer1, 2, &fft_IR_temp[i], 1, fdn_Buffersize / 2);
+        vDSP_ctoz(reinterpret_cast<DSPComplex*>(IR_TempBuffer1.get()), 2, &fft_IR_temp[i], 1, fdn_Buffersize / 2);
 
         // Perform a real-to-complex FFT.
         vDSP_fft_zrip(fftSetup, &fft_IR_temp[i], 1, fdn_Log2N, FFT_FORWARD);
@@ -505,11 +532,11 @@ void FDN:: windowIR() {
 }
 
 void FDN:: setWindowBoundries(int start, int end) {
+    const juce::SpinLock::ScopedLockType lock(parameterLock);
     tMixStart = start;
     tMixEnd = end;
     refreshWindow();
-    //unlockParameters();
-    unlockParamtersOnOff = 1;
+    unlockParamtersOnOff.store(true, std::memory_order_release);
 }
 
 void FDN::refreshWindow() {
@@ -520,40 +547,39 @@ void FDN::refreshWindow() {
 void FDN::getWindowedOutput(const int aW_Blocksize) {
     float NyquistBit;
 
-
     for (int i = 0; i < NumDelaylines; i++) {
         vDSP_vclr(fft_Delaylines[i].imagp, 1, fdn_Buffersize / 2);
         vDSP_vclr(fft_Delaylines[i].realp, 1, fdn_Buffersize / 2);
-        vDSP_vclr(IR_TempBuffer1, 1, fdn_Buffersize);
     }
 
+    vDSP_vclr(IR_TempBuffer1, 1, fdn_Buffersize);
     memcpy(IR_TempBuffer1, inBuffer, aW_Blocksize * sizeof(float));
 
-    for (int i = 0; i < NumDelaylines; i++) {
-        // Reinterpret Input as SplitComplex
-        vDSP_ctoz((DSPComplex *)IR_TempBuffer1, 2, &fft_Delaylines[i], 1, fdn_Buffersize / 2);
+    vDSP_ctoz((DSPComplex *)IR_TempBuffer1.get(), 2, &fft_Input, 1, fdn_Buffersize / 2);
+    vDSP_fft_zrip(fftSetup, &fft_Input, 1, fdn_Log2N, FFT_FORWARD);
 
-        // Perform a real-to-complex FFT.
-        vDSP_fft_zrip(fftSetup, &fft_Delaylines[i], 1, fdn_Log2N, FFT_FORWARD);
+    for (int i = 0; i < NumDelaylines; i++) {
+        vDSP_zvmov(&fft_Input, 1, &fft_Delaylines[i], 1, fdn_Buffersize / 2);
 
         NyquistBit = fft_IR[i].imagp[0] * fft_Delaylines[i].imagp[0]; //Nyquistbit Correction
+        const float impulseNyquist = fft_IR[i].imagp[0];
 
         fft_IR[i].imagp[0] = 0;
         fft_Delaylines[i].imagp[0] = 0;
 
         vDSP_zvmul(&fft_IR[i], 1, &fft_Delaylines[i], 1, &fft_Delaylines[i], 1, fdn_Buffersize / 2, 1);
         fft_Delaylines[i].imagp[0] = NyquistBit;
+        fft_IR[i].imagp[0] = impulseNyquist;
         vDSP_fft_zrip(fftSetup, &fft_Delaylines[i], 1, fdn_Log2N, FFT_INVERSE);
-        vDSP_ztoc(&fft_Delaylines[i], 1, (DSPComplex *)TempBuffer[i], 2, fdn_Buffersize / 2);
+        vDSP_ztoc(&fft_Delaylines[i], 1, reinterpret_cast<DSPComplex*>(TempBuffer[i].get()), 2, fdn_Buffersize / 2);
 
         vDSP_vsma(TempBuffer[i], 1, &fftScale, EarlyReflectionsBuffer[i], 1, EarlyReflectionsBuffer[i], 1, fdn_Buffersize);
     }
 }
 
 void FDN::setFilterCoefficients() {
-    if (T60 <= 0.0015) {
-        T60 = 0.0015;
-    }
+    T60 = juce::jmax(T60, 0.0015f);
+    T60Ratio = juce::jmax(T60Ratio, 0.001f);
 
     for (int i = 0; i < NumDelaylines; i++) {
         R0[i] = pow(10.0, -3.0 * DelayTimes_temp[i] / (T60 * Samplerate));
@@ -573,70 +599,87 @@ void FDN::unlockParameters() {
     }
 
     for (int i = 0; i < NumDelaylines; i++) {
-        TemporaryPointer = fft_IR[i].realp;
-        fft_IR[i].realp = fft_IR_temp[i].realp;
-        fft_IR_temp[i].realp = TemporaryPointer;
-
-        TemporaryPointer = fft_IR[i].imagp;
-        fft_IR[i].imagp = fft_IR_temp[i].imagp;
-        fft_IR_temp[i].imagp = TemporaryPointer;
+        fft_IR[i].swapWith(fft_IR_temp[i]);
     }
 }
 
-void FDN::setDelayTimes(float min, float max) {
-    printf("set Delays\n");
-    int i;
-    int MinMax[2];
-    int L = sizeof(Primnumbers) / sizeof(Primnumbers[0]);
+void FDN::setDelayTimesUnchecked(float min, float max) {
+    constexpr int numberOfPrimes = static_cast<int>(sizeof(Primnumbers) / sizeof(Primnumbers[0]));
+    const auto* begin = std::begin(Primnumbers);
+    const auto* end = std::end(Primnumbers);
+    const auto minIterator = std::lower_bound(begin, end, static_cast<int>(min));
+    const auto maxIterator = std::lower_bound(begin, end, static_cast<int>(max));
+    const int minIndex = juce::jlimit(0, numberOfPrimes - 1, static_cast<int>(std::distance(begin, minIterator)));
+    const int maxIndex = juce::jlimit(minIndex,
+                                      numberOfPrimes - 1,
+                                      static_cast<int>(std::distance(begin, maxIterator)));
+    const double sampleRateScale = Samplerate / 44100.0;
 
-    for (i = 0; i < L; i++) {
-        if (Primnumbers[i] >= min) {
-            MinMax[0] = i; break;
-        }
-    }
-
-    for (i = 0; i < L; i++) {
-        if (Primnumbers[i] >= max) {
-            MinMax[1] = i; break;
-        }
-    }
-
-    int Step = (int)(MinMax[1] - MinMax[0]) / NumDelaylines;
-
-    for (i = 0; i < NumDelaylines; i++) {
-        DelayTimes_temp[i] = Primnumbers[MinMax[0] + i * Step] * (int)(Samplerate / 44100.0);
+    for (int i = 0; i < NumDelaylines; i++) {
+        const int primeIndex = minIndex
+            + ((maxIndex - minIndex) * i) / juce::jmax(1, NumDelaylines - 1);
+        DelayTimes_temp[i] = juce::jlimit(1,
+                                         static_cast<int>(fdn_Buffersize) - 1,
+                                         static_cast<int>(std::lround(Primnumbers[primeIndex]
+                                                                      * sampleRateScale)));
     }
 
     setFilterCoefficients();
     //printf("Delaytimes[0]=%i, Delaytimes[15]=%i\n", DelayTimes[i], DelayTimes[NumDelaylines-1]);
 
-    minDelaytime = min;
-    maxDelaytime = max;
+    minDelaytime = static_cast<int>(min);
+    maxDelaytime = static_cast<int>(max);
+}
+
+void FDN::setDelayTimes(float min, float max) {
+    const juce::SpinLock::ScopedLockType lock(parameterLock);
+    setDelayTimesUnchecked(min, max);
+    refreshWindow();
+    unlockParamtersOnOff.store(true, std::memory_order_release);
+}
+
+void FDN::setParameters(float minDelay,
+                        float maxDelay,
+                        float t60,
+                        float t60Ratio,
+                        int windowStart,
+                        int windowEnd) {
+    const juce::SpinLock::ScopedLockType lock(parameterLock);
+    T60 = juce::jmax(t60, 0.0015f);
+    T60Ratio = juce::jmax(t60Ratio, 0.001f);
+    tMixStart = windowStart;
+    tMixEnd = windowEnd;
+    setDelayTimesUnchecked(minDelay, maxDelay);
+    refreshWindow();
+    unlockParamtersOnOff.store(true, std::memory_order_release);
 }
 
 void FDN::setT60(float t60) {
-    T60 = t60;
-    printf("T60 = %f", T60);
+    const juce::SpinLock::ScopedLockType lock(parameterLock);
+    T60 = juce::jmax(t60, 0.0015f);
     setFilterCoefficients();
     refreshWindow();
-    //unlockParameters();
-    unlockParamtersOnOff = 1;
+    unlockParamtersOnOff.store(true, std::memory_order_release);
 }
 
 void FDN::setT60Ratio(float t60ratio) {
-    T60Ratio = t60ratio;
+    const juce::SpinLock::ScopedLockType lock(parameterLock);
+    T60Ratio = juce::jmax(t60ratio, 0.001f);
     setFilterCoefficients();
     refreshWindow();
-    //unlockParameters();
-    unlockParamtersOnOff = 1;
+    unlockParamtersOnOff.store(true, std::memory_order_release);
+}
+
+void FDN::getPendingFilterCoefficients(float& gain, float& pole) {
+    const juce::SpinLock::ScopedLockType lock(parameterLock);
+    gain = static_cast<float>(a0_temp[NumDelaylines - 1]);
+    pole = static_cast<float>(p_temp[NumDelaylines - 1]);
 }
 
 void FDN::set_Volume(float Value) {
-    if (Value < 0) {
-        printf("(%f)-Error: Magnitude must be between 0 - 1\n", Value);
-    } else if (Value > 1) {
-        printf("(%f)-Error: Magnitude must be between 0 - 1\n", Value);
-    } else if (Value == 0) {
+    Value = juce::jlimit(0.0f, 1.0f, Value);
+
+    if (Value == 0) {
         fdnVol = 0;
     } else {
         fdnVol = 0.01 * exp(4.605170 * Value);

@@ -1,343 +1,416 @@
-/*
-   ==============================================================================
-
-    This file contains the basic framework code for a JUCE plugin processor.
-
-   ==============================================================================
- */
-
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
-#include "time.h"
 
-using namespace juce;
+#include <BinaryData.h>
 
-//==============================================================================
+#include <cmath>
+#include <cstring>
+#include <stdexcept>
+#include <string_view>
+
+namespace
+{
+constexpr auto parameterVersion = 1;
+
+std::string_view resourceView(const char* data, int size)
+{
+    return { data, static_cast<std::size_t>(size) };
+}
+}
+
 AmbVerbAudioProcessor::AmbVerbAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
     : AudioProcessor(BusesProperties()
                      #if !JucePlugin_IsMidiEffect
                       #if !JucePlugin_IsSynth
-                     .withInput("Input",  juce::AudioChannelSet::stereo(), true)
+                     .withInput("Input", juce::AudioChannelSet::ambisonic(AmbisonicsOrder), true)
                       #endif
-                     .withOutput("Output", juce::AudioChannelSet::stereo(), true)
+                     .withOutput("Output", juce::AudioChannelSet::ambisonic(AmbisonicsOrder), true)
                      #endif
-                     )
+                     ),
+      parameterState(*this, nullptr, "AmbVerbParameters", createParameterLayout())
+#else
+    : parameterState(*this, nullptr, "AmbVerbParameters", createParameterLayout())
 #endif
 {
-    FDN fdn; //fdn = new FDN();
-    EarlyRef earlyref; //earlyref = new EarlyRef();
+    earlyRefVolumeParameter = parameterState.getRawParameterValue(ParameterIDs::earlyRefVolume);
+    fdnVolumeParameter = parameterState.getRawParameterValue(ParameterIDs::fdnVolume);
+    reverbVolumeParameter = parameterState.getRawParameterValue(ParameterIDs::reverbVolume);
+    distanceParameter = parameterState.getRawParameterValue(ParameterIDs::distance);
+    roomSizeParameter = parameterState.getRawParameterValue(ParameterIDs::roomSize);
+    fdnT60Parameter = parameterState.getRawParameterValue(ParameterIDs::fdnT60);
+    fdnT60RatioParameter = parameterState.getRawParameterValue(ParameterIDs::fdnT60Ratio);
 
-    printf("Audioprozessor Constructor\n");
+    jassert(earlyRefVolumeParameter != nullptr
+            && fdnVolumeParameter != nullptr
+            && reverbVolumeParameter != nullptr
+            && distanceParameter != nullptr
+            && roomSizeParameter != nullptr
+            && fdnT60Parameter != nullptr
+            && fdnT60RatioParameter != nullptr);
 
-    for (int i = 0; i < ((AmbisonicsOrder + 1) * (AmbisonicsOrder + 1)); i++) {
-        DirectSoundBuffer[i] =  (float *)calloc(earlyref_Buffersize, sizeof(DirectSoundBuffer[i]));
+    for (auto* parameterID : { ParameterIDs::roomSize,
+                               ParameterIDs::fdnT60,
+                               ParameterIDs::fdnT60Ratio })
+        parameterState.addParameterListener(parameterID, this);
 
-        if (DirectSoundBuffer[i] == nullptr) {
-            perror("Error Allocating Memory"); return;
-        }
-
-        EarlyrefBuffer[i] =  (float *)calloc(earlyref_Buffersize, sizeof(EarlyrefBuffer[i]));
-
-        if (EarlyrefBuffer[i] == nullptr) {
-            perror("Error Allocating Memory"); return;
-        }
+    for (int channel = 0; channel < NumAmbisonicsChannels; ++channel) {
+        directSoundBuffer[channel].allocate(earlyref_Buffersize);
+        earlyReflectionBuffer[channel].allocate(earlyref_Buffersize);
     }
 
-    // - - - - - Initialize Audio Parameter - - - - -
-
-    addParameter(EarlyrefVolume = new AudioParameterFloat("EarlyrefVolume", "Early Reflections Volume", 0.0f, 1.0f, 0.7f));
-    addParameter(FdnVolume = new AudioParameterFloat("FdnVolume", "Late Reverb Volume", 0.0f, 1.0f, 0.7f));
-    addParameter(ReverbVolume = new AudioParameterFloat("ReverbVolume", "ER/LR Volume", 0.0f, 1.0f, 1.0f));
-    addParameter(Distance = new AudioParameterFloat("Distance", "Distance", 0.0f, 1.0f, 0.1f));
-    addParameter(Roomsize = new AudioParameterFloat("Roomsize", "Roomsize", MinRoomsize, MaxRoomsize, MinRoomsize));
-    addParameter(FdnT60 = new AudioParameterFloat("FdnT60", "T60(0Hz)", 0.0f, 10.0f, 2.0f));
-    addParameter(FdnT60Ratio = new AudioParameterFloat("FdnT60Ratio", "T60(0Hz)/T60(24 kHz)", 0.0f, 1.0f, 0.25f));
-
-
-
-
-
-
-
-
-    File RotationMatrixDirectory = (File::getSpecialLocation(File::currentExecutableFile).getParentDirectory().getFullPathName() + "/RotationMatrices");
-
-    std::cout << "PATH1:  " << (File::getSpecialLocation(File::currentExecutableFile).getParentDirectory().getFullPathName() + "/RotationMatrices") << "\n";
-
-    if (RotationMatrixDirectory.exists() == 0) {
-        FileChooser myChooser("Please select Location of RotationMatrices...",
-                              File::getSpecialLocation(File::userHomeDirectory),
-                              "");
-
-        if (myChooser.browseForDirectory()) {
-            File filePath =  myChooser.getResult().getFullPathName();
-            filePath.copyDirectoryTo(File::getSpecialLocation(File::currentExecutableFile).getParentDirectory().getFullPathName() + "/RotationMatrices");
-            std::cout << "PATH2:  " << myChooser.getResult().getFullPathName() << "\n";
-        } else {
-            std::cout << "PRoblem\n";
-        }
-    }
-
-    this->earlyref.readTransformationMatrix((RotationMatrixDirectory.getFullPathName()).toStdString());
-    this->earlyref.set_Q(Qmin + (*Roomsize - MinRoomsize) / (MaxRoomsize - MinRoomsize) * (Qmax - Qmin));
-    this->earlyref.UnlockRotationMatrixForCalculaion();
-    // - - - - - Activiere IR Subtraction innerhalb der FDN  - - - - -
-    this->fdn.setT60(*FdnT60);
-    this->fdn.setT60Ratio(*FdnT60Ratio);
-    this->fdn.setDelayTimes((int)*Roomsize, (int)(*Roomsize * maxDelayTimeAt_xRoomsize));
-    this->fdn.setWindowBoundries(WindowStartsAt_xRoomsize * (int)(*Roomsize), WindowStartsAt_xRoomsize * (int)(*Roomsize) + this->earlyref.OnsetLength * WindowEndsAt_xRoomsize);
+    loadRotationMatrices();
+    rebuildDspConfiguration(true);
 }
 
-AmbVerbAudioProcessor::~AmbVerbAudioProcessor() {
+AmbVerbAudioProcessor::~AmbVerbAudioProcessor()
+{
+    cancelPendingUpdate();
+
+    for (auto* parameterID : { ParameterIDs::roomSize,
+                               ParameterIDs::fdnT60,
+                               ParameterIDs::fdnT60Ratio })
+        parameterState.removeParameterListener(parameterID, this);
 }
 
-//==============================================================================
-const juce::String AmbVerbAudioProcessor::getName() const {
-    return JucePlugin_Name;
+juce::AudioProcessorValueTreeState::ParameterLayout AmbVerbAudioProcessor::createParameterLayout()
+{
+    juce::AudioProcessorValueTreeState::ParameterLayout layout;
+
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { ParameterIDs::earlyRefVolume, parameterVersion },
+        "Early Reflections Volume",
+        juce::NormalisableRange<float> { 0.0f, 1.0f },
+        0.7f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { ParameterIDs::fdnVolume, parameterVersion },
+        "Late Reverb Volume",
+        juce::NormalisableRange<float> { 0.0f, 1.0f },
+        0.7f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { ParameterIDs::reverbVolume, parameterVersion },
+        "ER/LR Volume",
+        juce::NormalisableRange<float> { 0.0f, 1.0f },
+        1.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { ParameterIDs::distance, parameterVersion },
+        "Distance",
+        juce::NormalisableRange<float> { 0.0f, 1.0f },
+        0.1f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { ParameterIDs::roomSize, parameterVersion },
+        "Room Size",
+        juce::NormalisableRange<float> { static_cast<float>(MinRoomsize),
+                                         static_cast<float>(MaxRoomsize),
+                                         1.0f },
+        static_cast<float>(MinRoomsize)));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { ParameterIDs::fdnT60, parameterVersion },
+        "T60 (0 Hz)",
+        juce::NormalisableRange<float> { 0.05f, 10.0f, 0.01f },
+        2.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { ParameterIDs::fdnT60Ratio, parameterVersion },
+        "T60 Ratio",
+        juce::NormalisableRange<float> { 0.01f, 1.0f, 0.001f },
+        0.25f));
+
+    return layout;
 }
 
-bool AmbVerbAudioProcessor::acceptsMidi() const {
+void AmbVerbAudioProcessor::loadRotationMatrices()
+{
+    const bool loaded = earlyref.readTransformationMatrices(
+        resourceView(BinaryData::Rxz3_1, BinaryData::Rxz3_1Size),
+        resourceView(BinaryData::Rxz3_2, BinaryData::Rxz3_2Size),
+        resourceView(BinaryData::Ryz3_1, BinaryData::Ryz3_1Size),
+        resourceView(BinaryData::Ryz3_2, BinaryData::Ryz3_2Size));
+
+    if (!loaded)
+        throw std::runtime_error("The embedded third-order rotation matrices are invalid");
+}
+
+const juce::String AmbVerbAudioProcessor::getName() const { return JucePlugin_Name; }
+
+bool AmbVerbAudioProcessor::acceptsMidi() const
+{
    #if JucePlugin_WantsMidiInput
     return true;
-
    #else
     return false;
-
    #endif
 }
 
-bool AmbVerbAudioProcessor::producesMidi() const {
+bool AmbVerbAudioProcessor::producesMidi() const
+{
    #if JucePlugin_ProducesMidiOutput
     return true;
-
    #else
     return false;
-
    #endif
 }
 
-bool AmbVerbAudioProcessor::isMidiEffect() const {
+bool AmbVerbAudioProcessor::isMidiEffect() const
+{
    #if JucePlugin_IsMidiEffect
     return true;
-
    #else
     return false;
-
    #endif
 }
 
-double AmbVerbAudioProcessor::getTailLengthSeconds() const {
-    return 0.0;
-}
+double AmbVerbAudioProcessor::getTailLengthSeconds() const { return 10.5; }
 
-int AmbVerbAudioProcessor::getNumPrograms() {
-    return 1;   // NB: some hosts don't cope very well if you tell them there are 0 programs,
-                // so this should be at least 1, even if you're not really implementing programs.
-}
-
-int AmbVerbAudioProcessor::getCurrentProgram() {
-    return 0;
-}
-
-void AmbVerbAudioProcessor::setCurrentProgram(int index) {
-}
-
-const juce::String AmbVerbAudioProcessor::getProgramName(int index) {
+int AmbVerbAudioProcessor::getNumPrograms() { return 1; }
+int AmbVerbAudioProcessor::getCurrentProgram() { return 0; }
+void AmbVerbAudioProcessor::setCurrentProgram(int index) { juce::ignoreUnused(index); }
+const juce::String AmbVerbAudioProcessor::getProgramName(int index)
+{
+    juce::ignoreUnused(index);
     return {};
 }
-
-void AmbVerbAudioProcessor::changeProgramName(int index, const juce::String& newName) {
+void AmbVerbAudioProcessor::changeProgramName(int index, const juce::String& newName)
+{
+    juce::ignoreUnused(index, newName);
 }
 
-//==============================================================================
-void AmbVerbAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
+void AmbVerbAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
+{
+    prepared = sampleRate >= 8000.0
+        && sampleRate <= 96000.0
+        && samplesPerBlock > 0
+        && static_cast<std::size_t>(samplesPerBlock
+                                    + static_cast<int>(WindowStartsAt_xRoomsize * MaxRoomsize))
+            <= earlyref_Buffersize;
+
+    if (!prepared) {
+        jassertfalse;
+        return;
+    }
+
+    earlyref.reset();
+    fdn.prepare(sampleRate, samplesPerBlock);
+
+    for (int channel = 0; channel < NumAmbisonicsChannels; ++channel) {
+        directSoundBuffer[channel].clear();
+        earlyReflectionBuffer[channel].clear();
+    }
+
+    rebuildDspConfiguration(true);
 }
 
-void AmbVerbAudioProcessor::releaseResources() {
-    // When playback stops, you can use this as an opportunity to free up any
-    // spare memory, etc.
+void AmbVerbAudioProcessor::releaseResources()
+{
+    prepared = false;
+    earlyref.reset();
+    fdn.reset();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
-bool AmbVerbAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
-  #if JucePlugin_IsMidiEffect
+bool AmbVerbAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
+{
+   #if JucePlugin_IsMidiEffect
     juce::ignoreUnused(layouts);
     return true;
-
-  #else
-
-    // This is the place where you check if the layout is supported.
-    // In this template code we only support mono or stereo.
-    // Some plugin hosts, such as certain GarageBand versions, will only
-    // load plugins that support stereo bus layouts.
-    if (
-        layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo()
-        && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::ambisonic(1)
-        && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::ambisonic(2)
-        && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::ambisonic(3)
-        && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::ambisonic(4)
-        && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::ambisonic(5)
-        && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::ambisonic(6)
-        && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::ambisonic(7)
-
-        ) {
-        return false;
-    }
-
-    if (
-        layouts.getMainInputChannelSet() != juce::AudioChannelSet::stereo()
-        && layouts.getMainInputChannelSet() != juce::AudioChannelSet::ambisonic(1)
-        && layouts.getMainInputChannelSet() != juce::AudioChannelSet::ambisonic(2)
-        && layouts.getMainInputChannelSet() != juce::AudioChannelSet::ambisonic(3)
-        && layouts.getMainInputChannelSet() != juce::AudioChannelSet::ambisonic(4)
-        && layouts.getMainInputChannelSet() != juce::AudioChannelSet::ambisonic(5)
-        && layouts.getMainInputChannelSet() != juce::AudioChannelSet::ambisonic(6)
-        && layouts.getMainInputChannelSet() != juce::AudioChannelSet::ambisonic(7)
-
-        ) {
-        return false;
-    }
-
-    // This checks if the input layout matches the output layout
-   #if !JucePlugin_IsSynth
-
-    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet()) {
-        return false;
-    }
-
+   #else
+    const auto requiredLayout = juce::AudioChannelSet::ambisonic(AmbisonicsOrder);
+    return layouts.getMainInputChannelSet() == requiredLayout
+        && layouts.getMainOutputChannelSet() == requiredLayout;
    #endif
+}
+#endif
 
-    return true;
-
-  #endif // if JucePlugin_IsMidiEffect
+float AmbVerbAudioProcessor::parameterToGain(float value) noexcept
+{
+    value = juce::jlimit(0.0f, 1.0f, value);
+    return value == 0.0f ? 0.0f : 0.01f * std::exp(4.605170f * value);
 }
 
-#endif // ifndef JucePlugin_PreferredChannelConfigurations
+float AmbVerbAudioProcessor::distanceToGain(float value) noexcept
+{
+    value = juce::jlimit(0.0f, 1.0f, value);
+    return value == 1.0f ? 0.0f : 0.01f * std::exp(4.605170f * (1.0f - value));
+}
 
-void AmbVerbAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) {
+void AmbVerbAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
+                                         juce::MidiBuffer& midiMessages)
+{
+    juce::ignoreUnused(midiMessages);
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    std::cout << "NumAmbisonicsChannels = " << NumAmbisonicsChannels;
+    const int blockSize = buffer.getNumSamples();
+    const int inputChannels = getTotalNumInputChannels();
+    const int outputChannels = getTotalNumOutputChannels();
 
-    auto inBuffer = buffer.getArrayOfReadPointers();
-    auto outBuffer = buffer.getArrayOfWritePointers();
-    int Blocksize = buffer.getNumSamples();
-    int DS_ER_Delay = (int)(WindowStartsAt_xRoomsize * *Roomsize);
-
-    earlyref.processBlock(inBuffer, buffer.getNumSamples(), getSampleRate()); //erzeuge Erstreflexionen
-
-    for (int i = 0; i < totalNumOutputChannels; ++i) {
-        memmove(EarlyrefBuffer[i], EarlyrefBuffer[i] + Blocksize, (earlyref_Buffersize - Blocksize) * sizeof(float));
-        memcpy(EarlyrefBuffer[i] + earlyref_Buffersize - Blocksize, earlyref.Output[i], Blocksize * sizeof(float));
-        memmove(DirectSoundBuffer[i], DirectSoundBuffer[i] + Blocksize, (earlyref_Buffersize - Blocksize) * sizeof(float));
-        memcpy(DirectSoundBuffer[i] + earlyref_Buffersize - Blocksize, inBuffer[i], Blocksize * sizeof(float));
+    if (!prepared
+        || inputChannels != NumAmbisonicsChannels
+        || outputChannels != NumAmbisonicsChannels
+        || blockSize <= 0
+        || static_cast<std::size_t>(blockSize) > earlyref_Buffersize) {
+        buffer.clear();
+        jassertfalse;
+        return;
     }
 
-    fdn.processBlock(inBuffer[0], buffer.getNumSamples(), getSampleRate()); //erzeuge Nachhall
+    const int directAndEarlyDelay = static_cast<int>(
+        WindowStartsAt_xRoomsize * appliedRoomSize.load(std::memory_order_acquire));
 
-    for (int i = 0; i < totalNumOutputChannels; ++i) { //Crossfade
-        vDSP_vsmul(DirectSoundBuffer[i] + earlyref_Buffersize - Blocksize - DS_ER_Delay + 100, 1, &DirectSoundVolume, outBuffer[i], 1, buffer.getNumSamples()); //Ausgabe des Direktschalls
+    if (static_cast<std::size_t>(blockSize + directAndEarlyDelay) > earlyref_Buffersize) {
+        buffer.clear();
+        jassertfalse;
+        return;
+    }
 
-        vDSP_vsma(EarlyrefBuffer[i] + earlyref_Buffersize - Blocksize - DS_ER_Delay, 1, &ReverbVol, outBuffer[i], 1, outBuffer[i], 1, buffer.getNumSamples());//Ausgabe der Erstreflexionen
-        vDSP_vsma(fdn.Output[i], 1, &ReverbVol, outBuffer[i], 1, outBuffer[i], 1, buffer.getNumSamples());//Ausgabe des Nachhalls
+    const auto input = buffer.getArrayOfReadPointers();
+    auto output = buffer.getArrayOfWritePointers();
+
+    earlyref.set_EarlyrefVolume(earlyRefVolumeParameter->load(std::memory_order_relaxed));
+    fdn.set_Volume(fdnVolumeParameter->load(std::memory_order_relaxed));
+    const float directGain = distanceToGain(distanceParameter->load(std::memory_order_relaxed));
+    const float reverbGain = parameterToGain(reverbVolumeParameter->load(std::memory_order_relaxed));
+
+    earlyref.processBlock(input, blockSize, getSampleRate());
+
+    for (int channel = 0; channel < NumAmbisonicsChannels; ++channel) {
+        memmove(earlyReflectionBuffer[channel],
+                earlyReflectionBuffer[channel] + blockSize,
+                (earlyref_Buffersize - static_cast<std::size_t>(blockSize)) * sizeof(float));
+        memcpy(earlyReflectionBuffer[channel] + earlyref_Buffersize - blockSize,
+               earlyref.Output[channel],
+               static_cast<std::size_t>(blockSize) * sizeof(float));
+
+        memmove(directSoundBuffer[channel],
+                directSoundBuffer[channel] + blockSize,
+                (earlyref_Buffersize - static_cast<std::size_t>(blockSize)) * sizeof(float));
+        memcpy(directSoundBuffer[channel] + earlyref_Buffersize - blockSize,
+               input[channel],
+               static_cast<std::size_t>(blockSize) * sizeof(float));
+    }
+
+    fdn.processBlock(input[0], blockSize, getSampleRate());
+
+    for (int channel = 0; channel < NumAmbisonicsChannels; ++channel) {
+        vDSP_vsmul(directSoundBuffer[channel]
+                       + earlyref_Buffersize - blockSize - directAndEarlyDelay + 100,
+                   1,
+                   &directGain,
+                   output[channel],
+                   1,
+                   blockSize);
+        vDSP_vsma(earlyReflectionBuffer[channel]
+                      + earlyref_Buffersize - blockSize - directAndEarlyDelay,
+                  1,
+                  &reverbGain,
+                  output[channel],
+                  1,
+                  output[channel],
+                  1,
+                  blockSize);
+        vDSP_vsma(fdn.Output[channel],
+                  1,
+                  &reverbGain,
+                  output[channel],
+                  1,
+                  output[channel],
+                  1,
+                  blockSize);
     }
 }
 
-//==============================================================================
-bool AmbVerbAudioProcessor::hasEditor() const {
-    return true; // (change this to false if you choose to not supply an editor)
-}
+bool AmbVerbAudioProcessor::hasEditor() const { return true; }
 
-juce::AudioProcessorEditor * AmbVerbAudioProcessor::createEditor() {
+juce::AudioProcessorEditor* AmbVerbAudioProcessor::createEditor()
+{
     return new AmbVerbAudioProcessorEditor(*this);
 }
 
-//==============================================================================
-void AmbVerbAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
-    std::unique_ptr<XmlElement> xml(new XmlElement("ParamAmbverb"));
-
-    xml->setAttribute("EarlyrefVolume", (double)*EarlyrefVolume);
-    copyXmlToBinary(*xml, destData);
-    xml->setAttribute("FdnVolume", (double)*FdnVolume);
-    copyXmlToBinary(*xml, destData);
-    xml->setAttribute("ReverbVolume", (double)*ReverbVolume);
-    copyXmlToBinary(*xml, destData);
-    xml->setAttribute("Distance", (double)*Distance);
-    copyXmlToBinary(*xml, destData);
-    xml->setAttribute("Roomsize", (double)*Roomsize);
-    copyXmlToBinary(*xml, destData);
-    xml->setAttribute("FdnT60", (double)*FdnT60);
-    copyXmlToBinary(*xml, destData);
-    xml->setAttribute("FdnT60Ratio", (double)*FdnT60Ratio);
-    copyXmlToBinary(*xml, destData);
+void AmbVerbAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
+{
+    if (auto xml = parameterState.copyState().createXml())
+        copyXmlToBinary(*xml, destData);
 }
 
-void AmbVerbAudioProcessor::setStateInformation(const void *data, int sizeInBytes) {
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
-    std::unique_ptr<XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
+void AmbVerbAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
+{
+    if (auto xml = getXmlFromBinary(data, sizeInBytes)) {
+        if (xml->hasTagName("ParamAmbverb")) {
+            const auto restoreLegacyParameter = [this, &xml](const char* parameterID) {
+                if (auto* parameter = parameterState.getParameter(parameterID)) {
+                    const float currentValue = parameter->convertFrom0to1(parameter->getValue());
+                    const float restoredValue = static_cast<float>(
+                        xml->getDoubleAttribute(parameterID, currentValue));
+                    parameter->setValueNotifyingHost(parameter->convertTo0to1(restoredValue));
+                }
+            };
 
-    if (xmlState != nullptr) {
-        printf("setStateinformation\n");
+            for (auto* parameterID : { ParameterIDs::earlyRefVolume,
+                                       ParameterIDs::fdnVolume,
+                                       ParameterIDs::reverbVolume,
+                                       ParameterIDs::distance,
+                                       ParameterIDs::roomSize,
+                                       ParameterIDs::fdnT60,
+                                       ParameterIDs::fdnT60Ratio })
+                restoreLegacyParameter(parameterID);
 
-        if (xmlState->hasTagName("ParamAmbverb")) {
-            *EarlyrefVolume = xmlState->getDoubleAttribute("EarlyrefVolume", 0.7);
-            this->earlyref.set_EarlyrefVolume(*EarlyrefVolume);
+            triggerAsyncUpdate();
+            return;
+        }
 
-            *FdnVolume = xmlState->getDoubleAttribute("FdnVolume", 0.7);
-            this->fdn.set_Volume(*FdnVolume);
+        const auto state = juce::ValueTree::fromXml(*xml);
 
-            *ReverbVolume = xmlState->getDoubleAttribute("ReverbVolume", 1.0);
-
-            if (*ReverbVolume == 0) {
-                ReverbVol = 0;
-            } else {
-                ReverbVol =  0.01 * exp(4.605170 * (*ReverbVolume));
-            }
-
-            *Distance = xmlState->getDoubleAttribute("Distance", 0.1);
-
-            if (*Distance == 1) {
-                DirectSoundVolume = 0;
-            } else {
-                DirectSoundVolume =  0.01 * exp(4.605170 * (1.0 - *Distance));
-            }
-
-            float Helper = *Roomsize;
-            *Roomsize = xmlState->getDoubleAttribute("Roomsize", MinRoomsize);
-
-
-            *FdnT60 = xmlState->getDoubleAttribute("FdnT60", 2.0);
-            this->fdn.setT60(*FdnT60 + (WindowStartsAt_xRoomsize * *Roomsize) / getSampleRate());
-            this->earlyref.FilterCoeffA = this->fdn.a0[(int)NumDelaylines - 1];
-            this->earlyref.FilterCoeffB = this->fdn.p[(int)NumDelaylines - 1];
-
-            *FdnT60Ratio = xmlState->getDoubleAttribute("FdnT60Ratio", 0.25);
-            this->fdn.setT60Ratio(*FdnT60Ratio);
-            this->earlyref.FilterCoeffA = this->fdn.a0[(int)NumDelaylines - 1];
-            this->earlyref.FilterCoeffB = this->fdn.p[(int)NumDelaylines - 1];
-
-            if (Helper != *Roomsize) {
-                this->earlyref.set_Q(Qmin + (*Roomsize - MinRoomsize) / (MaxRoomsize - MinRoomsize) * (Qmax - Qmin));
-                this->earlyref.UnlockRotationMatrixForCalculaion();
-                this->fdn.setDelayTimes((int)*Roomsize, (int)(*Roomsize * maxDelayTimeAt_xRoomsize));
-                this->fdn.setWindowBoundries(WindowStartsAt_xRoomsize * (int)(*Roomsize), WindowStartsAt_xRoomsize * (int)(*Roomsize) + earlyref.OnsetLength *
-                                             WindowEndsAt_xRoomsize);
-            }
+        if (state.isValid() && state.hasType(parameterState.state.getType())) {
+            parameterState.replaceState(state);
+            triggerAsyncUpdate();
         }
     }
 }
 
-//==============================================================================
-// This creates new instances of the plugin..
-juce::AudioProcessor * JUCE_CALLTYPE createPluginFilter() {
+void AmbVerbAudioProcessor::parameterChanged(const juce::String& parameterID, float newValue)
+{
+    juce::ignoreUnused(parameterID, newValue);
+    triggerAsyncUpdate();
+}
+
+void AmbVerbAudioProcessor::handleAsyncUpdate()
+{
+    rebuildDspConfiguration(false);
+}
+
+void AmbVerbAudioProcessor::rebuildDspConfiguration(bool activateImmediately)
+{
+    const float roomSize = roomSizeParameter->load(std::memory_order_acquire);
+    const float t60 = fdnT60Parameter->load(std::memory_order_acquire);
+    const float t60Ratio = fdnT60RatioParameter->load(std::memory_order_acquire);
+    const float q = Qmin
+        + (roomSize - MinRoomsize) / static_cast<float>(MaxRoomsize - MinRoomsize)
+            * (Qmax - Qmin);
+
+    earlyref.set_Q(q);
+
+    if (activateImmediately)
+        earlyref.UnlockRotationMatrixForCalculaion();
+
+    const int windowStart = static_cast<int>(WindowStartsAt_xRoomsize * roomSize);
+    const int windowEnd = static_cast<int>(windowStart
+        + earlyref.OnsetLength * WindowEndsAt_xRoomsize);
+
+    fdn.setParameters(roomSize,
+                      roomSize * maxDelayTimeAt_xRoomsize,
+                      t60,
+                      t60Ratio,
+                      windowStart,
+                      windowEnd);
+
+    float earlyReflectionFilterGain = 1.0f;
+    float earlyReflectionFilterPole = 0.0f;
+    fdn.getPendingFilterCoefficients(earlyReflectionFilterGain,
+                                     earlyReflectionFilterPole);
+    earlyref.FilterCoeffA.store(earlyReflectionFilterGain, std::memory_order_release);
+    earlyref.FilterCoeffB.store(earlyReflectionFilterPole, std::memory_order_release);
+    appliedRoomSize.store(roomSize, std::memory_order_release);
+}
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
     return new AmbVerbAudioProcessor();
 }

@@ -1,33 +1,26 @@
-//
-//  CompilationFlags.h
-//  AmbVerb
-//
-//  Created by Alexander Poletajev on 30/11/23.
-//  Copyright © 2023 Alexander Poletajev. All rights reserved.
-//
+#pragma once
 
-#ifndef CompilationFlags_h
-#define CompilationFlags_h
+#include <cstddef>
 
-#define Qmin                     200
-#define Qmax                     400
-#define MinRoomsize              1000
-#define MaxRoomsize              2000
-#define WindowStartsAt_xRoomsize 2.5
-#define WindowEndsAt_xRoomsize   0.3
-#define maxDelayTimeAt_xRoomsize 2.5
+inline constexpr int Qmin = 200;
+inline constexpr int Qmax = 400;
+inline constexpr int MinRoomsize = 1000;
+inline constexpr int MaxRoomsize = 2000;
+inline constexpr float WindowStartsAt_xRoomsize = 2.5f;
+inline constexpr float WindowEndsAt_xRoomsize = 0.3f;
+inline constexpr float maxDelayTimeAt_xRoomsize = 2.5f;
 
-#define AmbisonicsOrder          3 //max 10
-#define NumAmbisonicsChannels    (AmbisonicsOrder + 1) * (AmbisonicsOrder + 1)
-#define earlyref_Log2N           14
-#define    earlyref_Buffersize   (1u << earlyref_Log2N)   // Number of elements.
-#define Qx                       1.9f
-#define Qy                       1.3f
-#define Trunc                    8 // bigger Trunk -> bigger Buffersize
+// The current DSP implementation and bundled matrices are fixed to third-order
+// Ambisonics (ACN channel count: (order + 1)^2 = 16).
+inline constexpr int AmbisonicsOrder = 3;
+inline constexpr int NumAmbisonicsChannels = (AmbisonicsOrder + 1) * (AmbisonicsOrder + 1);
 
-#define fdn_Log2N                14
-#define    fdn_Buffersize        (1u << fdn_Log2N) // Number of elements.
-#define NumDelaylines            16 // possible Values: 2,4,8,16,32
+inline constexpr int earlyref_Log2N = 14;
+inline constexpr std::size_t earlyref_Buffersize = std::size_t { 1 } << earlyref_Log2N;
+inline constexpr float Qx = 1.9f;
+inline constexpr float Qy = 1.3f;
+inline constexpr int Trunc = 8;
 
-
-#endif /* CompilationFlags_h */
+inline constexpr int fdn_Log2N = 14;
+inline constexpr std::size_t fdn_Buffersize = std::size_t { 1 } << fdn_Log2N;
+inline constexpr int NumDelaylines = 16;
