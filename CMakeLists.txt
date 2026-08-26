@@ -76,6 +76,7 @@ target_sources(AmbVerb
         "${AMBVERB_SOURCE_DIR}/PluginEditor.h"
         "${AMBVERB_SOURCE_DIR}/PluginProcessor.cpp"
         "${AMBVERB_SOURCE_DIR}/PluginProcessor.h"
+        "${AMBVERB_SOURCE_DIR}/PartitionedConvolution.hpp"
         "${AMBVERB_SOURCE_DIR}/PortableDsp.hpp"
 )
 
@@ -173,6 +174,41 @@ if (BUILD_TESTING)
         PUBLIC
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags
+    )
+
+    juce_add_console_app(AmbVerbPartitionedConvolutionTest
+        PRODUCT_NAME "AmbVerb Partitioned Convolution Test"
+    )
+
+    target_sources(AmbVerbPartitionedConvolutionTest
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/Tests/PartitionedConvolutionMain.cpp"
+    )
+
+    target_include_directories(AmbVerbPartitionedConvolutionTest
+        PRIVATE
+            "${AMBVERB_SOURCE_DIR}"
+    )
+
+    target_compile_features(AmbVerbPartitionedConvolutionTest PRIVATE cxx_std_17)
+
+    target_compile_definitions(AmbVerbPartitionedConvolutionTest
+        PRIVATE
+            JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=0
+    )
+
+    target_link_libraries(AmbVerbPartitionedConvolutionTest
+        PRIVATE
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags
+    )
+
+    add_test(
+        NAME AmbVerbPartitionedConvolution
+        COMMAND AmbVerbPartitionedConvolutionTest
     )
 
     juce_add_console_app(AmbVerbDspBenchmark

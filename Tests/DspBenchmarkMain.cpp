@@ -135,6 +135,8 @@ juce::var benchmarkCase(AmbVerbAudioProcessor& processor,
     auto result = std::make_unique<juce::DynamicObject>();
     result->setProperty("sampleRate", sampleRate);
     result->setProperty("blockSize", blockSize);
+    result->setProperty("partitionSize", juce::nextPowerOfTwo(blockSize));
+    result->setProperty("convolutionFftSize", 2 * juce::nextPowerOfTwo(blockSize));
     result->setProperty("prepareUs",
                         std::chrono::duration<double, std::micro>(prepareEnd - prepareStart)
                             .count());
@@ -181,13 +183,14 @@ int main(int argc, char* argv[])
     }
 
     auto report = std::make_unique<juce::DynamicObject>();
-    report->setProperty("schemaVersion", 1);
+    report->setProperty("schemaVersion", 2);
     report->setProperty("platform", platformName());
     report->setProperty("operatingSystem", juce::SystemStats::getOperatingSystemName());
     report->setProperty("cpu", juce::SystemStats::getCpuModel());
     report->setProperty("ambisonicsOrder", AmbisonicsOrder);
     report->setProperty("channels", NumAmbisonicsChannels);
     report->setProperty("fftSize", static_cast<int>(earlyref_Buffersize));
+    report->setProperty("runtimeConvolution", "shared-uniform-partitioned-mimo");
     report->setProperty("warmupBlocks", options.warmupBlocks);
     report->setProperty("measuredBlocks", options.measuredBlocks);
     report->setProperty("constructorUs",
